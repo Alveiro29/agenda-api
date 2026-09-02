@@ -33,6 +33,13 @@
      CUPOS_GAZCUE     cabinas simultáneas en Gazcue (por defecto 2)
      CUPOS_SDN        cabinas simultáneas en Sto. Dgo. Norte (por defecto 2)
      ALLOWED_ORIGINS  dominios separados por coma que pueden llamar la API
+     HORAS_CANCELACION  antelación mínima para que la paciente cancele o
+                      mueva su cita sola (por defecto 24). Más cerca de la
+                      hora, el enlace la manda a WhatsApp.
+     CITA_SECRET      clave para firmar los enlaces personales. Si no se
+                      pone, se deriva de PANEL_CLAVE — no hay que configurar
+                      nada. Ojo: cambiar la clave que se use invalida los
+                      enlaces que ya estén circulando.
 
    ── CÓMO SE LEE EL CALENDARIO ──────────────────────────────
    En "Citas web":
@@ -58,6 +65,15 @@
                              y datos del paciente de una cita que aún no ha pasado)
      GET  /api/salud       (diagnóstico)
 
+     GET  /api/cita?t=TOKEN          (público · la paciente ve su propia cita)
+     GET  /api/cita/horarios?t=TOKEN (público · horarios libres para reprogramarla)
+     POST /api/cita/cancelar         (público · la paciente cancela su cita)
+     POST /api/cita/mover            (público · la paciente la cambia de horario)
+       El "token" es el enlace personal que devuelve /api/reservar. Va firmado
+       con HMAC, así que no se puede inventar ni cambiar por el de otra cita, y
+       vence dos días después de la cita. Cancelar y mover se cierran cuando
+       faltan menos de HORAS_CANCELACION horas (24 por defecto).
+
      POST /api/consentimientos          (público · el paciente firma desde su enlace)
      POST /api/consentimientos/importar (panel interno · trae consentimientos viejos guardados en localStorage)
      POST /api/pacientes                (panel interno · lista de pacientes)
@@ -82,6 +98,7 @@ const WORKDAYS = [1, 2, 3, 4, 5, 6]; // lunes a sábado (0 = domingo, cerrado)
 const LEAD_MIN = 120;              // mínimo 2 h de antelación
 const MAX_AHEAD = 90;              // se agenda hasta 90 días adelante
 const CUPOS_DEF = 2;               // cabinas por sucursal
+const CANCELA_DEF = 24;            // horas de antelación para que la paciente cancele sola
 const CIERRE_TOTAL = /cerrad|bloque|feriad|vacacion|no agendar|inhabil|inhábil/i;
 
 /* Sucursales. color = colorId de Google Calendar
@@ -305,6 +322,91 @@ const restoDescripcion = d => String(d || '')
   .join('\n')
   .replace(/\n{3,}/g, '\n\n')
   .trim();
+
+/* ── enlace personal de la paciente ("mi cita") ──────────────────────
+   Un token que identifica UNA cita concreta. No se puede inventar ni
+   cambiar por el de otra: lleva una firma HMAC hecha con un secreto que
+   solo conoce el servidor. La clave sale de CITA_SECRET si existe y, si
+   no, se deriva de PANEL_CLAVE, para no tener que configurar nada nuevo.
+   Se deriva, no se usa tal cual: de la firma no se puede sacar la clave.
+
+   Formato: base64url({i:idEvento, c:calendario, x:vence}) + "." + firma  */
+const b64urlTxt = t => btoa(String.fromCharCode(...new TextEncoder().encode(t)))
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const deB64urlTxt = t => new TextDecoder().decode(
+  Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
+
+async function firmarCita(env, payload) {
+  const base = env.CITA_SECRET || env.PANEL_CLAVE;
+  if (!base) throw new Error('Falta PANEL_CLAVE (o CITA_SECRET) para firmar los enlaces de cita.');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('cita-v1:' + base),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return b64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+}
+
+async function tokenCita(env, id, calendario, venceEn) {
+  const p = b64urlTxt(JSON.stringify({ i: id, c: calendario === 'personal' ? 'p' : 'c', x: venceEn }));
+  return p + '.' + await firmarCita(env, p);
+}
+
+/* Devuelve { id, calendario } o null si el token está roto, falsificado o vencido. */
+async function leerTokenCita(env, token) {
+  const t = String(token || '');
+  const corte = t.lastIndexOf('.');
+  if (corte < 1) return null;
+  const payload = t.slice(0, corte), firma = t.slice(corte + 1);
+  let esperada;
+  try { esperada = await firmarCita(env, payload); } catch (e) { return null; }
+  if (!claveOk(firma, esperada)) return null;         // comparación en tiempo constante
+  let d;
+  try { d = JSON.parse(deB64urlTxt(payload)); } catch (e) { return null; }
+  if (!d.i || !d.x || Date.now() > d.x * 1000) return null;
+  return { id: String(d.i), calendario: d.c === 'p' ? 'personal' : 'citas' };
+}
+
+const horasAviso = env => {
+  const n = parseInt(env.HORAS_CANCELACION, 10);
+  return Number.isFinite(n) && n >= 0 ? n : CANCELA_DEF;
+};
+
+/* Trae el evento al que apunta un token. Lanza con un mensaje ya listo
+   para enseñarle a la paciente. */
+async function citaDeToken(env, tk) {
+  const calId = tk.calendario === 'personal' ? env.CAL_PERSONAL : env.CAL_CITAS;
+  if (!calId) throw new Error('No encontramos tu cita.');
+  const token = await getToken(env);
+  const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(tk.id)}`;
+  const res = await fetch(base, { headers: { Authorization: `Bearer ${token}` } });
+  const ev = await res.json();
+  if (!res.ok) throw new Error('No encontramos tu cita. Puede que ya no exista.');
+  return { base, token, ev };
+}
+
+/* Lo que se le enseña a la paciente. A propósito NO viajan su teléfono ni su
+   correo: si el enlace se reenvía a alguien más, no se le regalan sus datos. */
+function vistaCita(env, ev) {
+  const desc = ev.description || '';
+  const cancelada = ev.status === 'cancelled' || !ev.start || !ev.start.dateTime;
+  const t0 = ev.start && ev.start.dateTime ? new Date(ev.start.dateTime) : null;
+  const t1 = t0 ? new Date((ev.end && ev.end.dateTime) || ev.start.dateTime) : null;
+  const local = t0 ? new Date(t0.getTime() - 4 * 3600 * 1000).toISOString() : '';
+  const sucKey = claveSucursal(ev.location);
+  const horas = horasAviso(env);
+  const faltan = t0 ? (t0.getTime() - Date.now()) / 3600000 : -1;
+
+  return {
+    fecha: local.slice(0, 10),
+    hora: local.slice(11, 16),
+    duracion: t0 ? Math.max(0, Math.round((t1 - t0) / 60000)) : 0,
+    servicio: campo(desc, 'Servicio') || (ev.summary || '').split('·')[0].trim(),
+    sucursal: sucKey ? SUCURSALES[sucKey].nombre : (ev.location || ''),
+    nombre: campo(desc, 'Paciente') || '',
+    nota: campo(desc, 'Nota del paciente'),
+    estado: cancelada ? 'Cancelada' : (faltan < 0 ? 'Pasada' : 'Agendada'),
+    puedeCambiar: !cancelada && faltan >= horas,
+    horasMinimas: horas
+  };
+}
 
 /* ── base de datos (D1): pacientes, consentimientos, notas de seguimiento ──
    Un mismo paciente puede llegar por distintas vías (agenda web, panel de
@@ -656,7 +758,170 @@ export default {
           } catch (e) { /* silencioso a propósito */ }
         }
 
-        return json({ ok: true, id: ev.id, fecha: b.fecha, hora: b.hora, duracion: dur, sucursal: info.nombre }, 200, request, env);
+        /* Enlace personal para ver, mover o cancelar su cita. Vence dos días
+           después de la cita: para entonces ya no hay nada que gestionar.
+           Si por lo que sea no se puede firmar, la reserva NO se cae — la
+           paciente siempre tiene el WhatsApp. */
+        let enlace = '';
+        try {
+          enlace = await tokenCita(env, ev.id, 'citas', Math.floor(fin.getTime() / 1000) + 2 * 86400);
+        } catch (e) { /* sin enlace, pero con cita */ }
+
+        return json({ ok: true, id: ev.id, fecha: b.fecha, hora: b.hora, duracion: dur, sucursal: info.nombre, token: enlace }, 200, request, env);
+      }
+
+      /* ── "mi cita": lo que la paciente puede hacer sola ─────────────────
+         Todo esto es público, sin clave: el acceso es el enlace firmado que
+         se le dio al reservar. Cada endpoint verifica la firma antes de
+         tocar nada, así que un enlace inventado no llega a ningún lado.
+         Cancelar y mover se cierran cuando faltan menos de HORAS_CANCELACION
+         horas — ahí la mandamos a WhatsApp, que es cuando de verdad conviene
+         hablar con la clínica. */
+
+      /* ver mi cita */
+      if (path === '/api/cita' && request.method === 'GET') {
+        const tk = await leerTokenCita(env, url.searchParams.get('t'));
+        if (!tk) return json({ ok: false, error: 'Este enlace no es válido o ya venció.' }, 401, request, env);
+        const { ev } = await citaDeToken(env, tk);
+        return json({ ok: true, cita: vistaCita(env, ev) }, 200, request, env);
+      }
+
+      /* horarios libres para reprogramarla — descontando su propia cita, que
+         si no se vería a sí misma ocupando la cabina */
+      if (path === '/api/cita/horarios' && request.method === 'GET') {
+        const tk = await leerTokenCita(env, url.searchParams.get('t'));
+        if (!tk) return json({ ok: false, error: 'Este enlace no es válido o ya venció.' }, 401, request, env);
+        const { ev } = await citaDeToken(env, tk);
+        const v = vistaCita(env, ev);
+        if (!v.puedeCambiar) {
+          return json({ ok: false, error: `Faltan menos de ${v.horasMinimas} horas para tu cita. Escríbenos por WhatsApp y la movemos contigo.` }, 409, request, env);
+        }
+        const suc = claveSucursal(ev.location);
+        if (!suc) return json({ ok: false, error: 'Escríbenos por WhatsApp para mover esta cita.' }, 409, request, env);
+
+        const desde = url.searchParams.get('desde');
+        const dias = Math.min(Math.max(nInt(url.searchParams.get('dias'), 6), 1), 14);
+        if (!isDate(desde)) return json({ ok: false, error: 'Fecha inválida.' }, 400, request, env);
+
+        const now = localNow();
+        const cupos = nInt(env[SUCURSALES[suc].cupos], CUPOS_DEF);
+        const ag = sinEvento(await agendaDe(env, instant(desde, 0), instant(addDays(desde, dias), 0)), tk.id);
+
+        const resultado = {};
+        for (let i = 0; i < dias; i++) {
+          const d = addDays(desde, i);
+          resultado[d] = (d < now.date || d > addDays(now.date, MAX_AHEAD))
+            ? [] : freeSlots(d, v.duracion || 45, ag, suc, cupos, now);
+        }
+        return json({ ok: true, dias: resultado, duracion: v.duracion, sucursal: v.sucursal }, 200, request, env);
+      }
+
+      /* cancelar mi cita */
+      if (path === '/api/cita/cancelar' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const tk = await leerTokenCita(env, b.t);
+        if (!tk) return json({ ok: false, error: 'Este enlace no es válido o ya venció.' }, 401, request, env);
+        const { base, token, ev } = await citaDeToken(env, tk);
+        const v = vistaCita(env, ev);
+        if (v.estado === 'Cancelada') return json({ ok: false, error: 'Esta cita ya estaba cancelada.' }, 409, request, env);
+        if (v.estado === 'Pasada') return json({ ok: false, error: 'Esta cita ya pasó.' }, 409, request, env);
+        if (!v.puedeCambiar) {
+          return json({ ok: false, error: `Faltan menos de ${v.horasMinimas} horas para tu cita. Escríbenos por WhatsApp para cancelarla.` }, 409, request, env);
+        }
+
+        /* Dejamos constancia de quién canceló ANTES de borrar: en el panel una
+           cita cancelada por la paciente y una borrada por la Dra. se ven
+           igual, y no es lo mismo. */
+        const sello = `Cancelada por la paciente desde el enlace del sitio el ${localNow().date}.`;
+        await fetch(base, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            summary: `CANCELADA · ${ev.summary || ''}`.slice(0, 300),
+            description: ((ev.description || '').trim() + '\n\n' + sello).trim()
+          })
+        }).catch(() => {});
+
+        const res = await fetch(base, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok && res.status !== 404 && res.status !== 410) {
+          const d = await res.json().catch(() => ({}));
+          return json({ ok: false, error: 'No pudimos cancelar tu cita: ' + ((d.error && d.error.message) || res.status) }, 502, request, env);
+        }
+
+        // el calendario ya está libre; la constancia en la base es aparte
+        if (env.DB) {
+          try {
+            await env.DB.prepare("UPDATE citas SET estado = 'Cancelada' WHERE cita_id = ?").bind(tk.id).run();
+            const pid = await upsertPaciente(env, { nombre: v.nombre });
+            await env.DB.prepare('INSERT INTO notas_seguimiento (paciente_id, cita_id, nota) VALUES (?, ?, ?)')
+              .bind(pid, tk.id, sello).run();
+          } catch (e) { /* silencioso a propósito */ }
+        }
+        return json({ ok: true }, 200, request, env);
+      }
+
+      /* mover mi cita a otro horario */
+      if (path === '/api/cita/mover' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const tk = await leerTokenCita(env, b.t);
+        if (!tk) return json({ ok: false, error: 'Este enlace no es válido o ya venció.' }, 401, request, env);
+        const { base, token, ev } = await citaDeToken(env, tk);
+        const v = vistaCita(env, ev);
+        if (v.estado !== 'Agendada') return json({ ok: false, error: 'Esta cita ya no se puede mover.' }, 409, request, env);
+        if (!v.puedeCambiar) {
+          return json({ ok: false, error: `Faltan menos de ${v.horasMinimas} horas para tu cita. Escríbenos por WhatsApp y la movemos contigo.` }, 409, request, env);
+        }
+
+        const fecha = String(b.fecha || '').trim(), hora = String(b.hora || '').trim();
+        if (!isDate(fecha) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) {
+          return json({ ok: false, error: 'Fecha u hora inválida.' }, 400, request, env);
+        }
+        const suc = claveSucursal(ev.location);
+        if (!suc) return json({ ok: false, error: 'Escríbenos por WhatsApp para mover esta cita.' }, 409, request, env);
+        const info = SUCURSALES[suc];
+        const dur = v.duracion || 45;
+        const mins = +hora.slice(0, 2) * 60 + +hora.slice(3, 5);
+        const now = localNow();
+
+        /* Aquí sí valen todas las reglas de una reserva normal: quien está del
+           otro lado es la paciente, no la Dra. No hay "guardar de todos modos". */
+        if (!WORKDAYS.includes(dowOf(fecha))) return json({ ok: false, error: 'Ese día el consultorio no abre.' }, 409, request, env);
+        if (mins < OPEN || mins + dur > CLOSE) return json({ ok: false, error: 'Ese horario está fuera del horario de atención.' }, 409, request, env);
+        if (fecha > addDays(now.date, MAX_AHEAD)) return json({ ok: false, error: 'Esa fecha está muy lejos. Elige otra más cercana.' }, 409, request, env);
+        if (fecha < now.date || (fecha === now.date && mins < now.mins + LEAD_MIN)) {
+          return json({ ok: false, error: 'Ese horario ya pasó. Elige otro.' }, 409, request, env);
+        }
+
+        const ini = instant(fecha, mins), fin = instant(fecha, mins + dur);
+        const ag = sinEvento(await agendaDe(env, ini, fin), tk.id);
+        if (ag.cierra.some(([cs, ce]) => ini.getTime() < ce && fin.getTime() > cs)) {
+          return json({ ok: false, error: 'Ese horario ya no está disponible. Elige otro, por favor.' }, 409, request, env);
+        }
+        if (nInt(env[info.cupos], CUPOS_DEF) - pico(ini.getTime(), fin.getTime(), ag.ocupa.filter(([, , k]) => k === suc)) <= 0) {
+          return json({ ok: false, error: 'Ese horario acaba de ocuparse. Elige otro, por favor.' }, 409, request, env);
+        }
+
+        const sello = `Movida por la paciente el ${now.date}: antes era ${v.fecha} a las ${v.hora}.`;
+        const res = await fetch(base, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            description: ((ev.description || '').trim() + '\n\n' + sello).trim(),
+            start: { dateTime: `${fecha}T${hora}:00${OFF}`, timeZone: TZ },
+            end: { dateTime: `${fecha}T${hhmm(mins + dur)}:00${OFF}`, timeZone: TZ }
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          return json({ ok: false, error: 'No pudimos mover tu cita: ' + ((data.error && data.error.message) || res.status) }, 502, request, env);
+        }
+
+        if (env.DB) {
+          try {
+            await env.DB.prepare('UPDATE citas SET fecha = ?, hora = ? WHERE cita_id = ?').bind(fecha, hora, tk.id).run();
+          } catch (e) { /* silencioso a propósito */ }
+        }
+        return json({ ok: true, fecha, hora, duracion: dur, sucursal: info.nombre }, 200, request, env);
       }
 
       /* ── panel: editar una cita que todavía no ha pasado ──
