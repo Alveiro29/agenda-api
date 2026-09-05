@@ -45,16 +45,19 @@
    En "Citas web":
      · Cita creada por el sitio → ocupa UNA cabina de su sucursal
        (la sucursal va en el campo Ubicación, y cada una tiene su color)
-     · Evento que ella cree SIN ubicación → cierra las dos sucursales
-     · Evento con CERRADO / BLOQUEO / FERIADO / VACACIONES / NO AGENDAR
-       en el título → cierra todo, aunque tenga ubicación
+     · Evento de día completo, o con CERRADO / BLOQUEO / FERIADO /
+       VACACIONES / NO AGENDAR en el título → es un bloqueo, no una cita:
+       con Ubicación en una sucursal cierra SOLO esa; sin Ubicación
+       (o con las dos escritas) cierra las dos. Así se crean también los
+       bloqueos que arma el panel (ver /api/bloqueos/crear).
    En el calendario personal:
-     · Cualquier evento ocupado → cierra las dos sucursales
+     · Cualquier evento ocupado → cierra las dos sucursales (no distingue
+       por Ubicación: ese calendario no tiene ese campo en uso)
    En ambos:
      · Un evento marcado "Disponible" no bloquea nada
        (los eventos de día completo son "Disponible" por defecto en Google;
         para que unas vacaciones sí cierren, ponles VACACIONES en el título
-        o márcalas como "Ocupado")
+        o márcalas como "Ocupado" — el panel ya lo hace solo)
 
    Endpoints:
      GET  /api/disponibilidad?desde=YYYY-MM-DD&dias=6&sucursal=Gazcue&dur=60
@@ -63,6 +66,11 @@
      POST /api/citas/nota  (panel interno · agrega una nota de seguimiento a una cita)
      POST /api/citas/editar (panel interno · cambia servicio, sucursal, fecha/hora
                              y datos del paciente de una cita que aún no ha pasado)
+     POST /api/citas/cancelar (panel interno · cancela una cita: queda en el
+                             historial con estado 'Cancelada', no solo borrada)
+     POST /api/bloqueos        (panel interno · lista vacaciones/feriados/cierres)
+     POST /api/bloqueos/crear  (panel interno · bloquea días en una sucursal o en ambas)
+     POST /api/bloqueos/borrar (panel interno · quita un bloqueo)
      GET  /api/salud       (diagnóstico)
 
      GET  /api/cita?t=TOKEN          (público · la paciente ve su propia cita)
@@ -211,8 +219,9 @@ async function leerCalendario(env, calendarId, timeMin, timeMax, esPersonal) {
     throw new Error('Google Calendar: ' + ((data.error && data.error.message) || res.status));
   }
 
-  const ocupa = [];   // [inicio, fin, sucursal, idEvento] — consume UNA cabina
-  const cierra = [];  // [inicio, fin, idEvento] — cierra TODAS las cabinas
+  const ocupa = [];          // [inicio, fin, sucursal, idEvento] — consume UNA cabina
+  const cierra = [];         // [inicio, fin, idEvento] — cierra TODAS las cabinas
+  const cierraSucursal = []; // [inicio, fin, sucursal, idEvento] — cierra UNA sola sucursal (vacaciones/bloqueo con ubicación)
 
   for (const ev of data.items || []) {
     if (ev.status === 'cancelled') continue;
@@ -239,21 +248,34 @@ async function leerCalendario(env, calendarId, timeMin, timeMax, esPersonal) {
       cierra.push([a, b, ev.id]);
       continue;
     }
-    if (forzado || diaCompleto) { cierra.push([a, b, ev.id]); continue; }
+    if (forzado || diaCompleto) {
+      // Un bloqueo (vacaciones, feriado…) con Ubicación puesta en una
+      // sucursal solo cierra esa; sin ubicación, cierra las dos.
+      const sucBloqueo = claveSucursal(ev.location);
+      if (sucBloqueo) cierraSucursal.push([a, b, sucBloqueo, ev.id]);
+      else cierra.push([a, b, ev.id]);
+      continue;
+    }
 
     const suc = claveSucursal(ev.location);
     if (!suc) { cierra.push([a, b, ev.id]); continue; }        // sin sucursal → cierra todo
     ocupa.push([a, b, suc, ev.id]);
   }
-  return { ocupa, cierra };
+  return { ocupa, cierra, cierraSucursal };
 }
+
+/* ¿Ese tramo [a,b) está cerrado para esa sucursal? Cierre total (ambas) o
+   cierre propio de la sucursal (vacaciones puestas solo ahí). */
+const cierraPara = (ag, suc, a, b) =>
+  ag.cierra.some(([cs, ce]) => a < ce && b > cs) ||
+  (ag.cierraSucursal || []).some(([cs, ce, k]) => k === suc && a < ce && b > cs);
 
 async function agendaDe(env, timeMin, timeMax) {
   if (!env.CAL_CITAS) throw new Error('Falta el secret CAL_CITAS');
   const citas = await leerCalendario(env, env.CAL_CITAS, timeMin, timeMax, false);
   if (!env.CAL_PERSONAL) return citas;
   const personal = await leerCalendario(env, env.CAL_PERSONAL, timeMin, timeMax, true);
-  return { ocupa: citas.ocupa, cierra: citas.cierra.concat(personal.cierra) };
+  return { ocupa: citas.ocupa, cierra: citas.cierra.concat(personal.cierra), cierraSucursal: citas.cierraSucursal };
 }
 
 /* Quita de la agenda los tramos que produce un evento concreto. Se usa al
@@ -261,7 +283,8 @@ async function agendaDe(env, timeMin, timeMax) {
    de sí misma. */
 const sinEvento = (ag, id) => ({
   ocupa: ag.ocupa.filter(([, , , eid]) => eid !== id),
-  cierra: ag.cierra.filter(([, , eid]) => eid !== id)
+  cierra: ag.cierra.filter(([, , eid]) => eid !== id),
+  cierraSucursal: (ag.cierraSucursal || []).filter(([, , , eid]) => eid !== id)
 });
 
 /* ── pico de cabinas ocupadas a la vez dentro de [a,b) ── */
@@ -290,7 +313,7 @@ function freeSlots(date, duration, ag, suc, cupos, now) {
     const a = instant(date, start).getTime();
     const b = instant(date, start + duration).getTime();
 
-    if (ag.cierra.some(([cs, ce]) => a < ce && b > cs)) continue;
+    if (cierraPara(ag, suc, a, b)) continue;
     const libres = cupos - pico(a, b, mios);
     if (libres > 0) out.push({ h: hhmm(start), c: libres });
   }
@@ -708,7 +731,7 @@ export default {
         // revalidación contra el calendario (evita pasarse de cabinas)
         const ini = instant(b.fecha, mins), fin = instant(b.fecha, mins + dur);
         const ag = await agendaDe(env, ini, fin);
-        if (ag.cierra.some(([cs, ce]) => ini.getTime() < ce && fin.getTime() > cs)) {
+        if (cierraPara(ag, suc, ini.getTime(), fin.getTime())) {
           return json({ ok: false, error: 'Ese horario ya no está disponible. Elige otro, por favor.' }, 409, request, env);
         }
         if (cupos - pico(ini.getTime(), fin.getTime(), ag.ocupa.filter(([, , k]) => k === suc)) <= 0) {
@@ -894,7 +917,7 @@ export default {
 
         const ini = instant(fecha, mins), fin = instant(fecha, mins + dur);
         const ag = sinEvento(await agendaDe(env, ini, fin), tk.id);
-        if (ag.cierra.some(([cs, ce]) => ini.getTime() < ce && fin.getTime() > cs)) {
+        if (cierraPara(ag, suc, ini.getTime(), fin.getTime())) {
           return json({ ok: false, error: 'Ese horario ya no está disponible. Elige otro, por favor.' }, 409, request, env);
         }
         if (nInt(env[info.cupos], CUPOS_DEF) - pico(ini.getTime(), fin.getTime(), ag.ocupa.filter(([, , k]) => k === suc)) <= 0) {
@@ -1040,7 +1063,7 @@ export default {
         if (mins < OPEN || mins + dur > CLOSE) avisos.push(`la cita se sale del horario de ${hhmm(OPEN)} a ${hhmm(CLOSE)}`);
         if (info && !esPersonal) {
           const ag = sinEvento(await agendaDe(env, ini, fin), id);
-          if (ag.cierra.some(([cs, ce]) => ini.getTime() < ce && fin.getTime() > cs)) {
+          if (cierraPara(ag, suc, ini.getTime(), fin.getTime())) {
             avisos.push('ese rato está bloqueado en la agenda');
           } else {
             const cupos = nInt(env[info.cupos], CUPOS_DEF);
@@ -1311,6 +1334,201 @@ export default {
               'INSERT INTO notas_seguimiento (paciente_id, cita_id, nota) VALUES (?, ?, ?)'
             ).bind(pacienteId, id, nota).run();
           } catch (e) { /* la nota en Calendar ya se guardó; no fallamos la petición por esto */ }
+        }
+        return json({ ok: true }, 200, request, env);
+      }
+
+      /* ── panel: cancelar una cita ──
+         Igual que cuando la paciente cancela desde su enlace (mismo sello,
+         mismo PATCH+DELETE), pero iniciado por la Dra. desde el panel. La cita
+         no desaparece sin dejar rastro: el título queda "CANCELADA · …", el
+         sello dice quién la canceló y desde dónde, y la fila en la base de
+         datos (tabla "citas") pasa a estado 'Cancelada' — así el historial
+         del paciente la sigue mostrando aunque el evento ya no esté en
+         Google Calendar. */
+      if (path === '/api/citas/cancelar' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        const id = String(b.id || '').trim();
+        if (!id) return json({ ok: false, error: 'Falta el id de la cita.' }, 400, request, env);
+        const esPersonal = b.calendario === 'personal';
+        const calId = esPersonal ? env.CAL_PERSONAL : env.CAL_CITAS;
+        if (!calId) return json({ ok: false, error: 'Ese calendario no está configurado.' }, 400, request, env);
+
+        const token = await getToken(env);
+        const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(id)}`;
+        const previa = await fetch(base, { headers: { Authorization: `Bearer ${token}` } });
+        const ev = await previa.json();
+        if (!previa.ok) {
+          return json({ ok: false, error: 'No se encontró esa cita: ' + ((ev.error && ev.error.message) || previa.status) }, 404, request, env);
+        }
+        if (ev.status === 'cancelled') return json({ ok: false, error: 'Esa cita ya estaba cancelada.' }, 409, request, env);
+        if (!ev.start || !ev.start.dateTime) {
+          return json({ ok: false, error: 'Eso es un bloqueo de día completo, no una cita.' }, 409, request, env);
+        }
+
+        const sello = `Cancelada por la Dra. desde el panel el ${localNow().date}.`;
+        await fetch(base, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            summary: `CANCELADA · ${ev.summary || ''}`.slice(0, 300),
+            description: ((ev.description || '').trim() + '\n\n' + sello).trim()
+          })
+        }).catch(() => {});
+
+        const res = await fetch(base, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok && res.status !== 404 && res.status !== 410) {
+          const d = await res.json().catch(() => ({}));
+          return json({ ok: false, error: 'No pudimos cancelar la cita: ' + ((d.error && d.error.message) || res.status) }, 502, request, env);
+        }
+
+        // el calendario ya quedó libre; la constancia en la base es aparte
+        if (env.DB) {
+          try {
+            await env.DB.prepare("UPDATE citas SET estado = 'Cancelada' WHERE cita_id = ?").bind(id).run();
+            const pid = await upsertPaciente(env, { nombre: b.nombre, telefono: b.telefono, correo: b.email });
+            await env.DB.prepare('INSERT INTO notas_seguimiento (paciente_id, cita_id, nota) VALUES (?, ?, ?)')
+              .bind(pid, id, sello).run();
+          } catch (e) { /* silencioso a propósito */ }
+        }
+        return json({ ok: true }, 200, request, env);
+      }
+
+      /* ── panel: listar bloqueos (vacaciones, feriados, cierres) ──
+         Un bloqueo es un evento de día completo en "Citas web" que de verdad
+         cierra algo: con CERRADO/BLOQUEO/FERIADO/VACACIONES/NO AGENDAR en el
+         título, o marcado "Ocupado" (ver leerCalendario). Con Ubicación en
+         una sucursal cierra solo esa; sin ubicación, cierra las dos. Se listan
+         aparte de las citas normales para que el panel tenga una vista propia
+         de "cuándo no se trabaja", sin mezclarlos con pacientes. */
+      if (path === '/api/bloqueos' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        if (!env.CAL_CITAS) return json({ ok: false, error: 'Falta el secret CAL_CITAS.' }, 500, request, env);
+
+        const desde = isDate(b.desde) ? b.desde : addDays(localNow().date, -30);
+        const hasta = isDate(b.hasta) ? b.hasta : addDays(localNow().date, 365);
+
+        const token = await getToken(env);
+        const items = await eventosDeCalendario(token, env.CAL_CITAS, instant(desde, 0), instant(addDays(hasta, 1), 0));
+        const bloqueos = items
+          .filter(ev => ev.status !== 'cancelled' && ev.start && ev.start.date
+            && (CIERRE_TOTAL.test(ev.summary || '') || ev.transparency !== 'transparent'))
+          .map(ev => {
+            const sucKey = claveSucursal(ev.location);
+            return {
+              id: ev.id,
+              desde: ev.start.date,
+              hasta: addDays(ev.end.date, -1),   // Google guarda el fin del día completo como exclusivo
+              sucursal: sucKey ? SUCURSALES[sucKey].nombre : 'Ambas',
+              motivo: campo(ev.description || '', 'Motivo'),
+              titulo: ev.summary || ''
+            };
+          })
+          .sort((a, c) => a.desde.localeCompare(c.desde));
+        return json({ ok: true, bloqueos }, 200, request, env);
+      }
+
+      /* ── panel: crear un bloqueo (vacaciones, días que la Dra. no va) ──
+         Se guarda como un evento de día completo en "Citas web", marcado
+         "Ocupado" y con VACACIONES en el título (para que cierre aunque a
+         alguien se le ocurra abrirlo como "Disponible" después). Con
+         sucursal puesta cierra solo esa cabina en ese rango; sin sucursal
+         (Ambas) cierra las dos. No hace falta "forzar": crear un bloqueo no
+         choca con nada en Google, así que solo avisa cuántas citas ya
+         agendadas caen dentro del rango — la Dra. decide si las mueve. */
+      if (path === '/api/bloqueos/crear' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        if (!env.CAL_CITAS) return json({ ok: false, error: 'Falta el secret CAL_CITAS.' }, 500, request, env);
+
+        const desde = String(b.desde || '').trim();
+        const hasta = String(b.hasta || b.desde || '').trim();
+        if (!isDate(desde) || !isDate(hasta)) return json({ ok: false, error: 'Fechas inválidas.' }, 400, request, env);
+        if (hasta < desde) return json({ ok: false, error: 'La fecha "hasta" no puede ser antes que "desde".' }, 400, request, env);
+        const hoy = localNow().date;
+        if (hasta < hoy) return json({ ok: false, error: 'Esas fechas ya pasaron.' }, 400, request, env);
+        if (hasta > addDays(desde, 366)) return json({ ok: false, error: 'El rango es demasiado largo (máximo un año).' }, 400, request, env);
+
+        const sucKey = claveSucursal(b.sucursal);
+        if (b.sucursal && !sucKey) {
+          return json({ ok: false, error: 'Sucursal no reconocida. Elige Gazcue, Santo Domingo Norte o deja "Ambas".' }, 400, request, env);
+        }
+        const info = sucKey ? SUCURSALES[sucKey] : null;
+
+        const motivo = String(b.motivo || '').trim().slice(0, 200);
+        const titulo = `VACACIONES${info ? ' · ' + info.nombre : ''}${motivo ? ' · ' + motivo : ''}`.slice(0, 300);
+        const descripcion = [
+          motivo ? `Motivo: ${motivo}` : '',
+          `Bloqueo creado desde el panel el ${hoy}.`
+        ].filter(Boolean).join('\n');
+
+        const token = await getToken(env);
+        const cuerpo = {
+          summary: titulo,
+          description: descripcion,
+          start: { date: desde },
+          end: { date: addDays(hasta, 1) },
+          transparency: 'opaque'
+        };
+        if (info) { cuerpo.location = info.nombre; cuerpo.colorId = info.color; } else { cuerpo.colorId = '8'; }
+
+        const res = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(env.CAL_CITAS)}/events`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo) }
+        );
+        const data = await res.json();
+        if (!res.ok) {
+          return json({ ok: false, error: 'No se pudo crear el bloqueo: ' + ((data.error && data.error.message) || res.status) }, 502, request, env);
+        }
+
+        // aviso informativo: no bloquea la creación, solo dice cuántas citas
+        // ya agendadas caen dentro de ese rango y esa sucursal. Se descuentan
+        // los bloqueos (este mismo incluido): no son pacientes.
+        let citasAfectadas = 0;
+        try {
+          const citas = await listarCitas(env, instant(desde, 0), instant(addDays(hasta, 1), 0));
+          citasAfectadas = citas.filter(c =>
+            c.estado === 'Agendada' && !c.diaCompleto && !CIERRE_TOTAL.test(c.nombre || '')
+            && (!info || c.sucursal === info.nombre)).length;
+        } catch (e) { /* informativo; si falla no tumbamos la creación */ }
+
+        return json({ ok: true, id: data.id, desde, hasta, sucursal: info ? info.nombre : 'Ambas', citasAfectadas }, 200, request, env);
+      }
+
+      /* ── panel: quitar un bloqueo ── */
+      if (path === '/api/bloqueos/borrar' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        const id = String(b.id || '').trim();
+        if (!id) return json({ ok: false, error: 'Falta el id del bloqueo.' }, 400, request, env);
+        if (!env.CAL_CITAS) return json({ ok: false, error: 'Falta el secret CAL_CITAS.' }, 500, request, env);
+
+        const token = await getToken(env);
+        const res = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(env.CAL_CITAS)}/events/${encodeURIComponent(id)}`,
+          { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok && res.status !== 404 && res.status !== 410) {
+          const d = await res.json().catch(() => ({}));
+          return json({ ok: false, error: 'No se pudo quitar el bloqueo: ' + ((d.error && d.error.message) || res.status) }, 502, request, env);
         }
         return json({ ok: true }, 200, request, env);
       }
