@@ -21,5 +21,6 @@ documentados en la cabecera de `worker.js`.
 El sitio [`sitio-katherin`](https://github.com/Alveiro29/sitio-katherin):
 
 - `js/booking.js` → `/api/disponibilidad`, `/api/reservar`
-- `js/citas.js` → `/api/citas`, `/api/citas/nota`, `/api/citas/editar`, `/api/citas/cancelar`
+- `js/citas.js` → `/api/citas`, `/api/citas/nota`, `/api/citas/editar`, `/api/citas/cancelar`,
+  `/api/bloqueos`, `/api/bloqueos/crear`, `/api/bloqueos/borrar`
 - `js/consent.js` → `/api/consentimientos*`, `/api/pacientes*`
