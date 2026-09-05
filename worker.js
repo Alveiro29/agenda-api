@@ -63,6 +63,8 @@
      POST /api/citas/nota  (panel interno · agrega una nota de seguimiento a una cita)
      POST /api/citas/editar (panel interno · cambia servicio, sucursal, fecha/hora
                              y datos del paciente de una cita que aún no ha pasado)
+     POST /api/citas/cancelar (panel interno · cancela una cita: queda en el
+                             historial con estado 'Cancelada', no solo borrada)
      GET  /api/salud       (diagnóstico)
 
      GET  /api/cita?t=TOKEN          (público · la paciente ve su propia cita)
@@ -1311,6 +1313,67 @@ export default {
               'INSERT INTO notas_seguimiento (paciente_id, cita_id, nota) VALUES (?, ?, ?)'
             ).bind(pacienteId, id, nota).run();
           } catch (e) { /* la nota en Calendar ya se guardó; no fallamos la petición por esto */ }
+        }
+        return json({ ok: true }, 200, request, env);
+      }
+
+      /* ── panel: cancelar una cita ──
+         Igual que cuando la paciente cancela desde su enlace (mismo sello,
+         mismo PATCH+DELETE), pero iniciado por la Dra. desde el panel. La cita
+         no desaparece sin dejar rastro: el título queda "CANCELADA · …", el
+         sello dice quién la canceló y desde dónde, y la fila en la base de
+         datos (tabla "citas") pasa a estado 'Cancelada' — así el historial
+         del paciente la sigue mostrando aunque el evento ya no esté en
+         Google Calendar. */
+      if (path === '/api/citas/cancelar' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        const id = String(b.id || '').trim();
+        if (!id) return json({ ok: false, error: 'Falta el id de la cita.' }, 400, request, env);
+        const esPersonal = b.calendario === 'personal';
+        const calId = esPersonal ? env.CAL_PERSONAL : env.CAL_CITAS;
+        if (!calId) return json({ ok: false, error: 'Ese calendario no está configurado.' }, 400, request, env);
+
+        const token = await getToken(env);
+        const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(id)}`;
+        const previa = await fetch(base, { headers: { Authorization: `Bearer ${token}` } });
+        const ev = await previa.json();
+        if (!previa.ok) {
+          return json({ ok: false, error: 'No se encontró esa cita: ' + ((ev.error && ev.error.message) || previa.status) }, 404, request, env);
+        }
+        if (ev.status === 'cancelled') return json({ ok: false, error: 'Esa cita ya estaba cancelada.' }, 409, request, env);
+        if (!ev.start || !ev.start.dateTime) {
+          return json({ ok: false, error: 'Eso es un bloqueo de día completo, no una cita.' }, 409, request, env);
+        }
+
+        const sello = `Cancelada por la Dra. desde el panel el ${localNow().date}.`;
+        await fetch(base, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            summary: `CANCELADA · ${ev.summary || ''}`.slice(0, 300),
+            description: ((ev.description || '').trim() + '\n\n' + sello).trim()
+          })
+        }).catch(() => {});
+
+        const res = await fetch(base, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok && res.status !== 404 && res.status !== 410) {
+          const d = await res.json().catch(() => ({}));
+          return json({ ok: false, error: 'No pudimos cancelar la cita: ' + ((d.error && d.error.message) || res.status) }, 502, request, env);
+        }
+
+        // el calendario ya quedó libre; la constancia en la base es aparte
+        if (env.DB) {
+          try {
+            await env.DB.prepare("UPDATE citas SET estado = 'Cancelada' WHERE cita_id = ?").bind(id).run();
+            const pid = await upsertPaciente(env, { nombre: b.nombre, telefono: b.telefono, correo: b.email });
+            await env.DB.prepare('INSERT INTO notas_seguimiento (paciente_id, cita_id, nota) VALUES (?, ?, ?)')
+              .bind(pid, id, sello).run();
+          } catch (e) { /* silencioso a propósito */ }
         }
         return json({ ok: true }, 200, request, env);
       }
