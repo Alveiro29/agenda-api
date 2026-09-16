@@ -217,8 +217,19 @@ const PALABRAS_DRA = [
 ];
 
 /* La firma de la marca sale en los títulos que crea la web. Hay que quitarla
-   antes de buscar el "DRA" manual, o cada cita quedaría marcada como suya. */
-const FIRMA_MARCA = /\b(dra\s+katherin\s+almonte|katherin\s+almonte|skin\s+lab)\b/g;
+   antes de buscar el "DRA" manual, o cada cita quedaría marcada como suya.
+
+   Va con `i` a propósito: sin ella solo limpiaba la firma escrita en
+   minúsculas, y un título con la capitalización normal —"Facial · Ana —
+   Dra Katherin Almonte"— conservaba el "Dra" suelto, que el patrón de
+   abajo leía como el marcador manual. Esa cita quedaba marcada como
+   procedimiento de la Dra. y le cerraba la agenda en la otra sucursal sin
+   motivo. El punto de "Dra." es opcional por lo mismo.
+
+   Quitar de más aquí no puede marcar de menos: esto solo borra el nombre
+   de la marca, y las señales reales (extendedProperties, el catálogo, el
+   [DRA] explícito) no dependen de él. */
+const FIRMA_MARCA = /\b(dra\.?\s+katherin\s+almonte|katherin\s+almonte|skin\s+lab)\b/gi;
 
 const normDra = s => String(s == null ? '' : s)
   .normalize('NFD').replace(/[̀-ͯ]/g, '')   // fuera las tildes
