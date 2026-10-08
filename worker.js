@@ -106,6 +106,9 @@
             que antes. Con él se aplican además las reglas de la Dra.
      POST /api/reservar
      POST /api/citas       (panel interno · pide PANEL_CLAVE en el cuerpo)
+                           Cada cita trae sus notas de seguimiento en
+                           "seguimientos" — el panel las usa para las alertas
+                           de revisión y de recuperación de pacientes.
      POST /api/citas/nota  (panel interno · agrega una nota de seguimiento a una cita)
      POST /api/citas/editar (panel interno · cambia servicio, sucursal, fecha/hora
                              y datos del paciente de una cita que aún no ha pasado)
@@ -651,6 +654,17 @@ function campo(texto, etiqueta) {
   return m ? m[1].trim() : '';
 }
 
+/* Las notas que el panel le va agregando a una cita ("Seguimiento (fecha):
+   texto", ver /api/citas/nota). El panel las usa para saber si ya se llamó a
+   la paciente para su revisión o para volver a hacerse el procedimiento. */
+function notasSeguimiento(texto) {
+  const out = [];
+  const re = /^Seguimiento \((\d{4}-\d{2}-\d{2})\):\s*(.+)$/gm;
+  let m;
+  while ((m = re.exec(texto || ''))) out.push({ fecha: m[1], nota: m[2].trim() });
+  return out;
+}
+
 /* Las líneas con las que el sitio arma la descripción de una cita. Todo lo
    demás (el sello "Reservado desde el sitio web", las notas de seguimiento)
    es texto que hay que conservar tal cual al reescribir el evento. */
@@ -887,6 +901,7 @@ async function listarCitas(env, timeMin, timeMax) {
       origen: web ? 'Web' : 'Manual',
       diaCompleto: !ev.start.dateTime,
       dra: !ev.start.date && eventoEsDra(ev),
+      seguimientos: notasSeguimiento(desc),
       creada: ev.created ? ev.created.slice(0, 10) : ''
     });
   }
@@ -922,6 +937,7 @@ async function listarCitas(env, timeMin, timeMax) {
         origen: 'Personal',
         diaCompleto: false,
         dra: true,
+        seguimientos: notasSeguimiento(desc),
         creada: ev.created ? ev.created.slice(0, 10) : ''
       });
     }
@@ -990,7 +1006,7 @@ export default {
 
         return json({
           ok: true,
-          version: 'dra-2sedes-1',
+          version: 'dra-2sedes-2-seguimientos',
           cuentaDeServicio: sa.client_email,
           horario: `${hhmm(OPEN)}–${hhmm(CLOSE)} · días ${WORKDAYS.join(',')} (0=dom)`,
           sucursales: Object.values(SUCURSALES).map(s => `${s.nombre}: ${nInt(env[s.cupos], CUPOS_DEF)} cabinas`),
@@ -2140,7 +2156,7 @@ export default {
 export {
   clasificarEventos, mezclarAgendas, sinEvento, cierraPara, pico,
   citasDraDelDia, conflictoDra, freeSlots, sugerenciaPara,
-  esServicioDra, eventoEsDra, claveSucursal, normDra,
+  esServicioDra, eventoEsDra, claveSucursal, normDra, notasSeguimiento,
   SUCURSALES, SERVICIOS_DRA, PALABRAS_DRA,
   TRASLADO_MIN, MAX_CAMBIOS_SEDE, BUFFER_DRA_MIN, AGENDA_VACIA
 };
