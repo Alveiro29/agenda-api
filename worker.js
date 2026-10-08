@@ -132,6 +132,8 @@
      POST /api/consentimientos/importar (panel interno · trae consentimientos viejos guardados en localStorage)
      POST /api/pacientes                (panel interno · lista de pacientes)
      POST /api/pacientes/historial      (panel interno · citas + consentimientos + notas de un paciente)
+     POST /api/pacientes/recuperacion   (panel interno · visitas de cada paciente, para ver
+                                         quién lleva mucho tiempo sin venir)
      POST /api/pacientes/sincronizar    (panel interno · trae de la agenda las pacientes que ya
                                          tienen citas hechas; se puede repetir sin duplicar.
                                          incluirPersonal:true suma el calendario personal)
@@ -1006,7 +1008,7 @@ export default {
 
         return json({
           ok: true,
-          version: 'dra-2sedes-2-seguimientos',
+          version: 'dra-2sedes-3-recuperacion',
           cuentaDeServicio: sa.client_email,
           horario: `${hhmm(OPEN)}–${hhmm(CLOSE)} · días ${WORKDAYS.join(',')} (0=dom)`,
           sucursales: Object.values(SUCURSALES).map(s => `${s.nombre}: ${nInt(env[s.cupos], CUPOS_DEF)} cabinas`),
@@ -2063,6 +2065,44 @@ export default {
           LIMIT 500
         `).all();
         return json({ ok: true, pacientes: results }, 200, request, env);
+      }
+
+      /* ── panel: recuperación de pacientes ──
+         Cada paciente con su historial de visitas (todas, no solo el último
+         año: la base de datos guarda lo que se haya sincronizado), si tiene
+         una cita futura y la última vez que se la contactó para recuperarla.
+         El panel decide quién lleva demasiado tiempo sin venir; aquí no se
+         filtra por días para que el umbral se pueda cambiar sin volver a pedir. */
+      if (path === '/api/pacientes/recuperacion' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        if (!env.DB) return json({ ok: false, error: 'Falta conectar la base de datos en Cloudflare.' }, 500, request, env);
+        const hoy = localNow().date;
+        const SEP = '\u001f', FILA = '\u001e';
+        const { results } = await env.DB.prepare(`
+          SELECT p.id, p.nombre, p.telefono, p.correo,
+            MAX(CASE WHEN c.fecha >= ? THEN 1 ELSE 0 END) AS futura,
+            GROUP_CONCAT(CASE WHEN c.fecha < ?
+              THEN c.fecha || ? || c.servicio || ? || c.sucursal || ? || c.cita_id || ? || c.origen END, ?) AS visitas,
+            (SELECT MAX(date(n.creado_en)) FROM notas_seguimiento n
+              WHERE n.paciente_id = p.id AND n.nota LIKE 'Contactada%') AS contactada
+          FROM pacientes p
+          JOIN citas c ON c.paciente_id = p.id AND c.estado != 'Cancelada'
+          GROUP BY p.id
+        `).bind(hoy, hoy, SEP, SEP, SEP, SEP, FILA).all();
+        const pacientes = results.map(r => ({
+          id: r.id, nombre: r.nombre, telefono: r.telefono, correo: r.correo,
+          futura: !!r.futura, contactada: r.contactada || '',
+          visitas: String(r.visitas || '').split(FILA).filter(Boolean).map(v => {
+            const [fecha, servicio, sucursal, id, origen] = v.split(SEP);
+            return { fecha, servicio, sucursal, id, origen };
+          })
+        })).filter(p => p.visitas.length);
+        return json({ ok: true, hoy, pacientes }, 200, request, env);
       }
 
       /* ── panel: historial completo de un paciente ── */
