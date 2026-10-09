@@ -1008,7 +1008,7 @@ export default {
 
         return json({
           ok: true,
-          version: 'dra-2sedes-3-recuperacion',
+          version: 'dra-2sedes-4-contactos',
           cuentaDeServicio: sa.client_email,
           horario: `${hhmm(OPEN)}–${hhmm(CLOSE)} · días ${WORKDAYS.join(',')} (0=dom)`,
           sucursales: Object.values(SUCURSALES).map(s => `${s.nombre}: ${nInt(env[s.cupos], CUPOS_DEF)} cabinas`),
@@ -2069,8 +2069,10 @@ export default {
 
       /* ── panel: recuperación de pacientes ──
          Cada paciente con su historial de visitas (todas, no solo el último
-         año: la base de datos guarda lo que se haya sincronizado), si tiene
-         una cita futura y la última vez que se la contactó para recuperarla.
+         año: la base de datos guarda lo que se haya sincronizado), sus citas
+         por delante y sus contactos ("Contacto · … · le escribí / respondió,
+         más adelante / no le interesa", ver /api/citas/nota). Con eso el
+         panel sabe en qué va cada contacto y si agendó después.
          El panel decide quién lleva demasiado tiempo sin venir; aquí no se
          filtra por días para que el umbral se pueda cambiar sin volver a pedir. */
       if (path === '/api/pacientes/recuperacion' && request.method === 'POST') {
@@ -2085,21 +2087,27 @@ export default {
         const SEP = '\u001f', FILA = '\u001e';
         const { results } = await env.DB.prepare(`
           SELECT p.id, p.nombre, p.telefono, p.correo,
-            MAX(CASE WHEN c.fecha >= ? THEN 1 ELSE 0 END) AS futura,
+            GROUP_CONCAT(CASE WHEN c.fecha >= ?
+              THEN c.fecha || ? || c.servicio || ? || c.sucursal || ? || c.cita_id || ? || c.origen END, ?) AS proximas,
             GROUP_CONCAT(CASE WHEN c.fecha < ?
               THEN c.fecha || ? || c.servicio || ? || c.sucursal || ? || c.cita_id || ? || c.origen END, ?) AS visitas,
-            (SELECT MAX(date(n.creado_en)) FROM notas_seguimiento n
-              WHERE n.paciente_id = p.id AND n.nota LIKE 'Contactada%') AS contactada
+            (SELECT GROUP_CONCAT(date(n.creado_en, '-4 hours') || ? || n.nota, ?) FROM notas_seguimiento n
+              WHERE n.paciente_id = p.id AND n.nota LIKE 'Contact%') AS contactos
           FROM pacientes p
           JOIN citas c ON c.paciente_id = p.id AND c.estado != 'Cancelada'
           GROUP BY p.id
-        `).bind(hoy, hoy, SEP, SEP, SEP, SEP, FILA).all();
+        `).bind(hoy, SEP, SEP, SEP, SEP, FILA, hoy, SEP, SEP, SEP, SEP, FILA, SEP, FILA).all();
+        const citasDe = txt => String(txt || '').split(FILA).filter(Boolean).map(v => {
+          const [fecha, servicio, sucursal, id, origen] = v.split(SEP);
+          return { fecha, servicio, sucursal, id, origen };
+        });
         const pacientes = results.map(r => ({
           id: r.id, nombre: r.nombre, telefono: r.telefono, correo: r.correo,
-          futura: !!r.futura, contactada: r.contactada || '',
-          visitas: String(r.visitas || '').split(FILA).filter(Boolean).map(v => {
-            const [fecha, servicio, sucursal, id, origen] = v.split(SEP);
-            return { fecha, servicio, sucursal, id, origen };
+          visitas: citasDe(r.visitas),
+          proximas: citasDe(r.proximas),
+          contactos: String(r.contactos || '').split(FILA).filter(Boolean).map(v => {
+            const [fecha, nota] = v.split(SEP);
+            return { fecha, nota };
           })
         })).filter(p => p.visitas.length);
         return json({ ok: true, hoy, pacientes }, 200, request, env);
