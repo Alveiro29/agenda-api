@@ -44,6 +44,7 @@ procedimientos (`SERVICIOS_DRA` / `PALABRAS_DRA`):
 | `TRASLADO_MIN` | 95 | minutos mínimos entre citas suyas en sedes distintas |
 | `MAX_CAMBIOS_SEDE` | 1 | cambios de sucursal que puede hacer en un día |
 | `BUFFER_DRA_MIN` | 15 | limpieza tras un procedimiento suyo |
+| `MAX_A_LA_VEZ_DRA` | 2 | citas suyas a la vez en la misma sede (una por cabina) |
 
 Ninguna cierra nada por adelantado: un día vacío tiene las dos sucursales
 100% disponibles. El bloqueo lo genera la propia reserva.
@@ -58,6 +59,7 @@ El sitio [`sitio-katherin`](https://github.com/Alveiro29/sitio-katherin):
 
 - `js/booking.js` → `/api/disponibilidad`, `/api/reservar`
 - `js/citas.js` y `js/seguimiento.js` → `/api/citas`, `/api/citas/todas`, `/api/citas/nota`, `/api/citas/editar`, `/api/citas/cancelar`,
+  `/api/citas/confirmar`,
   `/api/bloqueos`, `/api/bloqueos/crear`, `/api/bloqueos/borrar`, `/api/salud`,
   `/api/pacientes/recuperacion`
 - `js/mi-cita.js` → `/api/cita`, `/api/cita/horarios`, `/api/cita/cancelar`, `/api/cita/mover`

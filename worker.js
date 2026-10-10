@@ -36,10 +36,11 @@
      HORAS_CANCELACION  antelación mínima para que la paciente cancele o
                       mueva su cita sola (por defecto 24). Más cerca de la
                       hora, el enlace la manda a WhatsApp.
-     CITA_SECRET      clave para firmar los enlaces personales. Si no se
-                      pone, se deriva de PANEL_CLAVE — no hay que configurar
-                      nada. Ojo: cambiar la clave que se use invalida los
-                      enlaces que ya estén circulando.
+     CITA_SECRET      clave para firmar los enlaces personales (de cita y de
+                      consentimiento). Si no se pone, se deriva de
+                      PANEL_CLAVE — no hay que configurar nada. Ojo: cambiar
+                      la clave que se use invalida los enlaces que ya estén
+                      circulando.
      PERSONAL_SOLO_CLAVE  OBSOLETA. Ya no se usa para decidir bloqueos: el
                       alcance del calendario personal ahora es correcto por
                       diseño (ver más abajo). Se sigue leyendo solo para
@@ -54,18 +55,23 @@
        paralelo, porque los faciales tienen tiempo muerto (mascarillas,
        reposo) que aprovecha para alternar. Así trabaja la clínica.
 
-     · LA DRA. — recurso global de 1. Es la única que hace inyectables y
-       tratamientos íntimos, y no puede estar en dos sucursales a la vez:
-       entre Gazcue y la Av. Jacobo Majluta hay de 45 a 75 minutos reales
-       según el tráfico.
+     · LA DRA. — recurso global de 1. Hace los inyectables, los
+       tratamientos íntimos, las EVALUACIONES y las REVISIONES, y no puede
+       estar en dos sucursales a la vez: entre Gazcue y la Av. Jacobo
+       Majluta hay de 45 a 75 minutos reales según el tráfico.
 
    Dos reglas la gobiernan, y solo aplican a SUS procedimientos:
+
+     Regla 0 · en la MISMA sucursal puede llevar hasta MAX_A_LA_VEZ_DRA
+       citas suyas a la vez (una por cabina): mientras una paciente
+       reposa con el producto, atiende a la otra. En sucursales distintas,
+       nunca a la vez.
 
      Regla A · entre dos citas suyas en sucursales DISTINTAS tiene que
        haber al menos TRASLADO_MIN minutos entre el fin de una y el
        inicio de la otra. Se valida contra la cita anterior Y la
        siguiente: no se sabe en qué orden van a entrar las reservas.
-       Dentro de la MISMA sucursal no hay restricción: cita pegada a cita.
+       Dentro de la MISMA sucursal no hay traslado: cita pegada a cita.
 
      Regla B · sus citas de un mismo día pueden cambiar de sucursal como
        máximo MAX_CAMBIOS_SEDE veces. Gazcue → SDN → Gazcue se rechaza.
@@ -83,15 +89,20 @@
      · Cita creada por el sitio → ocupa UNA cabina de su sucursal
        (la sucursal va en el campo Ubicación, y cada una tiene su color).
        Si además es un procedimiento de la Dra., la ocupa a ella también.
+       Las citas puestas a mano (sin color de sucursal) se leen igual: por
+       la Ubicación y por el título. [DRA] en el título la marca como suya.
      · Evento de día completo, o con CERRADO / BLOQUEO / FERIADO /
        VACACIONES / NO AGENDAR en el título → es un bloqueo, no una cita:
        con Ubicación en una sucursal cierra SOLO esa; sin Ubicación
        (o con las dos escritas) cierra las dos. Así se crean también los
        bloqueos que arma el panel (ver /api/bloqueos/crear).
    En el calendario personal:
-     · Un evento ocupado → le cierra a ella SUS procedimientos, en las dos
-       sucursales. Los servicios de colaboradora siguen disponibles: su
-       almuerzo ya no tumba un facial en la otra sede.
+     · Un evento con una sucursal en la Ubicación → es una cita suya en
+       esa sede: ocupa cabina y cuenta para el traslado (reglas A y B).
+     · Un evento ocupado SIN sucursal → le cierra a ella SUS
+       procedimientos, en las dos sucursales, pero no dice dónde está.
+       Los servicios de colaboradora siguen disponibles: su almuerzo no
+       tumba un facial en la otra sede.
      · Salvo que el título traiga CERRADO/VACACIONES/etc., que sí cierra
        la clínica entera — es la forma de avisar que no se abre.
    En ambos:
@@ -99,6 +110,8 @@
        (los eventos de día completo son "Disponible" por defecto en Google;
         para que unas vacaciones sí cierren, ponles VACACIONES en el título
         o márcalas como "Ocupado" — el panel ya lo hace solo)
+     · Las TAREAS y RECORDATORIOS de Google (el circulito sin hora de fin)
+       NO son eventos: el sistema no los ve y no bloquean nada.
 
    Endpoints:
      GET  /api/disponibilidad?desde=YYYY-MM-DD&dias=6&sucursal=Gazcue&dur=60&servicio=Botox
@@ -131,12 +144,13 @@
        vence dos días después de la cita. Cancelar y mover se cierran cuando
        faltan menos de HORAS_CANCELACION horas (24 por defecto).
 
-     POST /api/consentimientos          (público · el paciente firma desde su enlace)
+     POST /api/consentimientos/enlace   (panel interno · firma el enlace que se le manda al paciente)
+     POST /api/consentimientos          (público · el paciente firma desde su enlace firmado)
      POST /api/consentimientos/importar (panel interno · trae consentimientos viejos guardados en localStorage)
      POST /api/pacientes                (panel interno · lista de pacientes)
      POST /api/pacientes/historial      (panel interno · citas + consentimientos + notas de un paciente)
-     POST /api/pacientes/recuperacion   (panel interno · visitas de cada paciente, para ver
-                                         quién lleva mucho tiempo sin venir)
+     POST /api/pacientes/recuperacion   (panel interno · todas las pacientes con sus citas y notas,
+                                         para la pestaña Recuperación: historial completo)
      POST /api/pacientes/sincronizar    (panel interno · trae de la agenda las pacientes que ya
                                          tienen citas hechas; se puede repetir sin duplicar.
                                          incluirPersonal:true suma el calendario personal)
@@ -165,6 +179,7 @@ const CIERRE_TOTAL = /cerrad|bloque|feriad|vacacion|no agendar|inhabil|inhábil/
 const TRASLADO_MIN = 95;           // minutos mínimos entre sucursales distintas
 const MAX_CAMBIOS_SEDE = 1;        // cambios de sucursal permitidos por día
 const BUFFER_DRA_MIN = 15;         // limpieza/preparación tras un procedimiento suyo
+const MAX_A_LA_VEZ_DRA = 2;        // citas suyas a la vez en la MISMA sede (una por cabina)
 const HORIZONTE_SUG = 14;          // días que se miran adelante para poder sugerir
 
 /* Fuente de verdad de qué consume a la Dra. Son los nombres EXACTOS del
@@ -172,6 +187,9 @@ const HORIZONTE_SUG = 14;          // días que se miran adelante para poder sug
    puntuación. El front NO decide esto — manda el nombre y aquí se resuelve.
    Si agregas un servicio al catálogo que lo haga ella, agrégalo aquí. */
 const SERVICIOS_DRA = [
+  /* Consulta: las evaluaciones y las revisiones las hace ella */
+  'evaluacion presencial',
+  'cita de revision',
   /* Mesoterapia y skin boosters */
   'mesoterapia pdrn acido hialuronico',
   'mesoterapia revitalisse hidratacion antioxidante',
@@ -196,6 +214,7 @@ const SERVICIOS_DRA = [
   'relleno de ojeras',
   'hilos tensores',
   /* Aparatología */
+  'dermapen microagujas',
   'radiofrecuencia fraccionada con microagujas',
   'remocion de verrugas exeresis',
   /* Corporal y bienestar */
@@ -211,16 +230,17 @@ const SERVICIOS_DRA = [
 
 /* Para las citas que ella escribe A MANO, donde el título no es el nombre
    exacto del catálogo ("Bótox – María"). Cualquiera de estas palabras la
-   marca como suya. OJO al agregar: aquí NO pueden entrar palabras de
-   servicios de colaboradora ('facial', 'peeling', 'hifu' a secas,
-   'limpieza', 'drenaje', 'masaje', 'evaluacion'), o le cerrarían la agenda
-   a la otra sucursal sin motivo. */
+   marca como suya. Las evaluaciones y revisiones también son suyas. OJO al
+   agregar: aquí NO pueden entrar palabras de servicios de colaboradora
+   ('facial', 'peeling', 'hifu' a secas, 'limpieza', 'drenaje', 'masaje'),
+   o le cerrarían la agenda a la otra sucursal sin motivo. */
 const PALABRAS_DRA = [
+  'evaluacion', 'revision',
   'botox', 'toxina botulinica', 'neuronox', 'acido hialuronico', 'relleno',
   'labios', 'menton', 'nasogenianos', 'ligamentario', 'armonizacion', 'ojeras',
   'hilos tensores', 'bioestimulacion', 'profhilo', 'skin booster', 'skinbooster',
   'long lasting', 'mesoterapia', 'pdrn', 'plasma rico', 'prp', 'exosomas',
-  'hipersudoracion', 'microagujas', 'verrugas', 'quemadores de grasa',
+  'hipersudoracion', 'microagujas', 'dermapen', 'verrugas', 'quemadores de grasa',
   'lipoescultura', 'sueroterapia', 'iv therapy', 'o shot', 'oshot',
   'hifu vaginal', 'vaginal', 'intim'
 ];
@@ -252,14 +272,20 @@ function esServicioDra(txt) {
   return PALABRAS_DRA.some(k => t.includes(k));
 }
 
-/* ¿Este evento del calendario la consume? Tres señales, en este orden:
-     1. extendedProperties.private.dra — definitivo, lo escribe la web
-     2. el título o la línea "Servicio:" coincide con el catálogo
-     3. el título trae [DRA] — el override manual, para que ella pueda
+/* ¿Este evento del calendario la consume? Señales, en este orden:
+     1. extendedProperties.private.dra = '1' — lo escribe la web
+     2. extendedProperties.private.servicio — el nombre del servicio que
+        guardó la web. Se decide OTRA VEZ con la lista de arriba, no con la
+        marca que se puso al reservar: así, cuando un servicio pasa a ser
+        de la Dra. (como las evaluaciones), las citas que ya estaban
+        agendadas también cuentan.
+     3. el título o la línea "Servicio:" coincide con el catálogo
+     4. el título trae [DRA] — el override manual, para que ella pueda
         reservarse tiempo sin escribir un servicio                        */
 function eventoEsDra(ev) {
   const priv = (ev.extendedProperties && ev.extendedProperties.private) || {};
   if (priv.dra === '1') return true;
+  if (priv.servicio) return esServicioDra(priv.servicio);
   if (priv.dra === '0') return false;
   const titulo = ev.summary || '';
   const servicio = (String(ev.description || '').match(/servicio\s*:\s*(.+)/i) || [])[1] || '';
@@ -280,6 +306,16 @@ const claveSucursal = txt => {
   return null;
 };
 const laOtraSucursal = k => Object.keys(SUCURSALES).find(x => x !== k) || null;
+
+/* Gazcue cierra los sábados a las 3:30 p.m.: la web no ofrece citas que
+   terminen después. La Dra. sí puede ponerlas a mano desde el panel (le
+   sale el aviso y guarda igual), pero una paciente sola a las 4 o 5 de la
+   tarde ahí no: los sábados en la tarde se atiende en Santo Domingo Norte. */
+const CIERRE_SABADO = { gazcue: 15 * 60 + 30 };
+const cierreDe = (date, suc) => (dowOf(date) === 6 && CIERRE_SABADO[suc]) || CLOSE;
+const fueraDeHorario = (date, suc) => cierreDe(date, suc) !== CLOSE
+  ? `Los sábados ${SUCURSALES[suc].nombre} atiende hasta las ${en12(hhmm(cierreDe(date, suc)))}: elige una hora más temprano o agenda en ${SUCURSALES[laOtraSucursal(suc)].nombre}.`
+  : 'Ese horario está fuera del horario de atención.';
 
 const DEFAULT_ORIGINS = [
   'https://sitio-katherin.josea-yuasen.workers.dev',
@@ -374,9 +410,9 @@ async function getToken(env) {
      dra             [ini, fin, sucursal, id] — además, consume a la Dra.
                      (es un subconjunto de "ocupa": también ocupa cuarto)
      draOcupa        [ini, fin, id]           — la ocupa a ella sin sede
-                     legible (su calendario personal). Bloquea sus
-                     procedimientos, pero no cuenta para las reglas A ni B:
-                     no se puede asumir dónde está.                        */
+                     legible (su calendario personal sin Ubicación).
+                     Bloquea sus procedimientos, pero no cuenta para las
+                     reglas A ni B: no se puede asumir dónde está.         */
 function clasificarEventos(items, esPersonal) {
   const ocupa = [], cierra = [], cierraSucursal = [], dra = [], draOcupa = [];
 
@@ -399,12 +435,18 @@ function clasificarEventos(items, esPersonal) {
     if (!(b > a)) continue;
 
     if (esPersonal) {
-      /* Su agenda personal ya NO cierra la clínica entera. Le cierra a ella
-         SUS procedimientos, en las dos sedes; los de colaboradora siguen
-         ofreciéndose. Un CERRADO/VACACIONES ahí sí cierra todo: esa es la
-         forma de avisar que la clínica no abre. */
-      if (forzado) cierra.push([a, b, ev.id]);
-      else draOcupa.push([a, b, ev.id]);
+      /* Su agenda personal no cierra la clínica entera. Un CERRADO/VACACIONES
+         ahí sí cierra todo: esa es la forma de avisar que la clínica no abre. */
+      if (forzado) { cierra.push([a, b, ev.id]); continue; }
+      /* Con una sucursal en la Ubicación, es una cita suya en esa sede:
+         ocupa cabina y cuenta para el traslado, igual que una de "Citas
+         web". Antes solo cerraba esa hora exacta, y la web le ofrecía la
+         otra sucursal justo antes o justo después, sin tiempo de cruzar. */
+      const sedePersonal = diaCompleto ? null : claveSucursal(ev.location);
+      if (sedePersonal) {
+        ocupa.push([a, b, sedePersonal, ev.id]);
+        dra.push([a, b, sedePersonal, ev.id]);
+      } else draOcupa.push([a, b, ev.id]);
       continue;
     }
     if (forzado || diaCompleto) {
@@ -505,7 +547,7 @@ function citasDraDelDia(ag, date) {
     .sort((x, y) => x.ini - y.ini);
 }
 
-/* ── el corazón de las reglas A y B ──
+/* ── el corazón de las reglas 0, A y B ──
    Devuelve null si la Dra. puede tomar el tramo [a,b) en esa sucursal, o el
    motivo por el que no. [a,b) tiene que venir YA con el buffer sumado.
 
@@ -514,17 +556,27 @@ function citasDraDelDia(ag, date) {
    sentidos sin importar en qué orden entraron las reservas. */
 function conflictoDra(suyas, draOcupa, a, b, suc) {
   if ((draOcupa || []).some(([s, e]) => a < e && b > s)) return 'ocupada';
-  if (suyas.some(c => a < c.fin && b > c.ini)) return 'ocupada';
 
+  /* Encima del tramo: en otra sede, nunca; en la misma, hasta
+     MAX_A_LA_VEZ_DRA contando el candidato (con buffer, como todo aquí). */
+  const encima = suyas.filter(c => a < c.fin && b > c.ini);
+  if (encima.some(c => c.suc !== suc)) return 'ocupada';
+  if (pico(a, b, encima.map(c => [c.ini, c.fin])) + 1 > MAX_A_LA_VEZ_DRA) return 'ocupada';
+
+  /* Las citas seguidas de una misma sede se funden en un bloque. El
+     traslado se mide desde que termina la ÚLTIMA del bloque — no la última
+     que empezó: con dos a la vez, una larga puede terminar después. */
   const seq = suyas.concat([{ ini: a, fin: b, suc }]).sort((x, y) => x.ini - y.ini);
+  const bloques = [];
+  for (const t of seq) {
+    const ult = bloques[bloques.length - 1];
+    if (ult && ult.suc === t.suc) ult.fin = Math.max(ult.fin, t.fin);
+    else bloques.push({ ini: t.ini, fin: t.fin, suc: t.suc });
+  }
+  if (bloques.length - 1 > MAX_CAMBIOS_SEDE) return 'segundo_traslado';
 
-  let cambios = 0;
-  for (let i = 0; i < seq.length - 1; i++) if (seq[i].suc !== seq[i + 1].suc) cambios++;
-  if (cambios > MAX_CAMBIOS_SEDE) return 'segundo_traslado';
-
-  for (let i = 0; i < seq.length - 1; i++) {
-    const x = seq[i], y = seq[i + 1];
-    if (x.suc !== y.suc && (y.ini - x.fin) < TRASLADO_MIN * 60000) return 'traslado';
+  for (let i = 0; i < bloques.length - 1; i++) {
+    if ((bloques[i + 1].ini - bloques[i].fin) < TRASLADO_MIN * 60000) return 'traslado';
   }
   return null;
 }
@@ -547,7 +599,8 @@ function freeSlots(date, duration, ag, suc, cupos, now, opciones) {
   const suyas = requiereDra ? citasDraDelDia(ag, date) : [];
   const isToday = date === now.date;
 
-  for (let start = OPEN; start + dur <= CLOSE; start += STEP) {
+  const cierre = cierreDe(date, suc);
+  for (let start = OPEN; start + dur <= cierre; start += STEP) {
     // lo que ya pasó no se reporta como bloqueado: es ruido, no un motivo
     if (isToday && !op.sinLead && start < now.mins + LEAD_MIN) continue;
 
@@ -682,26 +735,32 @@ const restoDescripcion = d => String(d || '')
   .replace(/\n{3,}/g, '\n\n')
   .trim();
 
-/* ── enlace personal de la paciente ("mi cita") ──────────────────────
-   Un token que identifica UNA cita concreta. No se puede inventar ni
-   cambiar por el de otra: lleva una firma HMAC hecha con un secreto que
-   solo conoce el servidor. La clave sale de CITA_SECRET si existe y, si
-   no, se deriva de PANEL_CLAVE, para no tener que configurar nada nuevo.
-   Se deriva, no se usa tal cual: de la firma no se puede sacar la clave.
+/* ── enlaces firmados ────────────────────────────────────────────────
+   Dos tipos de enlace personal salen de aquí, cada uno con su prefijo para
+   que la firma de uno no sirva para el otro:
+     · "mi cita"         → prefijo cita-v1
+     · consentimiento    → prefijo consent-v1
+   No se pueden inventar ni cambiar: llevan una firma HMAC hecha con un
+   secreto que solo conoce el servidor. La clave sale de CITA_SECRET si
+   existe y, si no, se deriva de PANEL_CLAVE, para no tener que configurar
+   nada nuevo. Se deriva, no se usa tal cual: de la firma no se puede sacar
+   la clave. */
+async function firmar(env, prefijo, payload) {
+  const base = env.CITA_SECRET || env.PANEL_CLAVE;
+  if (!base) throw new Error('Falta PANEL_CLAVE (o CITA_SECRET) para firmar los enlaces.');
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(prefijo + ':' + base),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return b64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
+}
 
+/* ── enlace personal de la paciente ("mi cita") ──
    Formato: base64url({i:idEvento, c:calendario, x:vence}) + "." + firma  */
 const b64urlTxt = t => btoa(String.fromCharCode(...new TextEncoder().encode(t)))
   .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const deB64urlTxt = t => new TextDecoder().decode(
   Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
 
-async function firmarCita(env, payload) {
-  const base = env.CITA_SECRET || env.PANEL_CLAVE;
-  if (!base) throw new Error('Falta PANEL_CLAVE (o CITA_SECRET) para firmar los enlaces de cita.');
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('cita-v1:' + base),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return b64url(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload)));
-}
+const firmarCita = (env, payload) => firmar(env, 'cita-v1', payload);
 
 async function tokenCita(env, id, calendario, venceEn) {
   const p = b64urlTxt(JSON.stringify({ i: id, c: calendario === 'personal' ? 'p' : 'c', x: venceEn }));
@@ -868,6 +927,12 @@ async function eventosDeCalendario(token, calendarId, timeMin, timeMax) {
   return items;
 }
 
+/* ¿La paciente ya confirmó que viene? Lo marca la Dra. o su equipo desde el
+   panel y vive en el propio evento (extendedProperties), así se ve igual
+   en cualquier teléfono o computadora que abra el panel. */
+const confirmadaDe = ev =>
+  ((ev.extendedProperties && ev.extendedProperties.private) || {}).confirmada === '1';
+
 /* Lee TODAS las citas del calendario de citas web, incluidas las canceladas.
    Devuelve filas planas, listas para tabla y para exportar.
    También agrega, marcadas como "Personal", las citas que la Dra. haya
@@ -907,6 +972,7 @@ async function listarCitas(env, timeMin, timeMax) {
       origen: web ? 'Web' : 'Manual',
       diaCompleto: !ev.start.dateTime,
       dra: !ev.start.date && eventoEsDra(ev),
+      confirmada: confirmadaDe(ev),
       seguimientos: notasSeguimiento(desc),
       creada: ev.created ? ev.created.slice(0, 10) : ''
     });
@@ -943,6 +1009,7 @@ async function listarCitas(env, timeMin, timeMax) {
         origen: 'Personal',
         diaCompleto: false,
         dra: true,
+        confirmada: confirmadaDe(ev),
         seguimientos: notasSeguimiento(desc),
         creada: ev.created ? ev.created.slice(0, 10) : ''
       });
@@ -1006,7 +1073,7 @@ export default {
         if (env.CAL_PERSONAL) {
           try {
             const p = await leerCalendario(env, env.CAL_PERSONAL, t0, t1, true);
-            chequeo['Agenda personal'] = `acceso correcto · ${p.draOcupa.length} compromisos hoy · ${p.cierra.length} cierres de clínica`;
+            chequeo['Agenda personal'] = `acceso correcto · ${p.dra.length} citas con sucursal hoy · ${p.draOcupa.length} compromisos sin sucursal · ${p.cierra.length} cierres de clínica`;
           } catch (e) { chequeo['Agenda personal'] = 'ERROR · ' + e.message; }
         } else chequeo['Agenda personal'] = 'no configurada (opcional)';
 
@@ -1014,16 +1081,18 @@ export default {
           ok: true,
           version: 'dra-2sedes-5-buscador',
           cuentaDeServicio: sa.client_email,
-          horario: `${hhmm(OPEN)}–${hhmm(CLOSE)} · días ${WORKDAYS.join(',')} (0=dom)`,
+          horario: `${hhmm(OPEN)}–${hhmm(CLOSE)} · días ${WORKDAYS.join(',')} (0=dom) · sábados Gazcue hasta ${hhmm(CIERRE_SABADO.gazcue)}`,
           sucursales: Object.values(SUCURSALES).map(s => `${s.nombre}: ${nInt(env[s.cupos], CUPOS_DEF)} cabinas`),
           reglasDeLaDra: {
             TRASLADO_MIN,
             MAX_CAMBIOS_SEDE,
             BUFFER_DRA_MIN,
+            MAX_A_LA_VEZ_DRA,
             serviciosDra: SERVICIOS_DRA.length,
             palabrasClaveDra: PALABRAS_DRA.length,
-            calendarioPersonal: 'cierra solo los procedimientos de la Dra., en las dos sedes'
+            calendarioPersonal: 'con sucursal en la ubicación cuenta como cita suya en esa sede; sin sucursal, solo la marca ocupada'
           },
+          enlacesConsentimiento: 'firmados',
           PERSONAL_SOLO_CLAVE: `${env.PERSONAL_SOLO_CLAVE || '(sin definir)'} — OBSOLETA: ya no se usa, el alcance es correcto por diseño`,
           calendarios: chequeo
         }, 200, request, env);
@@ -1100,7 +1169,7 @@ export default {
         const requiereDra = esServicioDra(b.servicio);
 
         if (!WORKDAYS.includes(dowOf(b.fecha))) return json({ ok: false, error: 'Ese día el consultorio no abre.' }, 409, request, env);
-        if (mins < OPEN || mins + dur > CLOSE) return json({ ok: false, error: 'Ese horario está fuera del horario de atención.' }, 409, request, env);
+        if (mins < OPEN || mins + dur > cierreDe(b.fecha, suc)) return json({ ok: false, error: fueraDeHorario(b.fecha, suc) }, 409, request, env);
         if (b.fecha < now.date || (b.fecha === now.date && mins < now.mins + LEAD_MIN)) {
           return json({ ok: false, error: 'Ese horario ya pasó. Elige otro.' }, 409, request, env);
         }
@@ -1127,42 +1196,64 @@ export default {
 
         const lim = s => String(s || '').slice(0, 300);
         const token = await getToken(env);
-        const res = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(env.CAL_CITAS)}/events`,
-          {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              summary: `${lim(b.servicio)} · ${lim(b.nombre)}`,
-              location: info.nombre,          // ← define a qué sucursal pertenece
-              colorId: info.color,            // ← color distinto por sucursal
-              /* Marca legible por máquina: es la señal definitiva de si la
-                 cita consume a la Dra., y no depende de cómo se escriba el
-                 título. Google la guarda y no la muestra en la interfaz. */
-              extendedProperties: {
-                private: {
-                  dra: requiereDra ? '1' : '0',
-                  sede: info.nombre,
-                  servicio: normDra(b.servicio).slice(0, 120)
-                }
-              },
-              description: [
-                `Paciente: ${lim(b.nombre)}`,
-                `Teléfono: ${lim(b.telefono)}`,
-                `Correo: ${lim(b.email)}`,
-                `Servicio: ${lim(b.servicio)}${b.precio ? ' · ' + lim(b.precio) : ''}`,
-                `Sucursal: ${info.nombre}`,
-                `Promociones: ${b.promos === true ? 'Sí' : 'No'}`,
-                b.nota ? `Nota del paciente: ${lim(b.nota)}` : '',
-                '', 'Reservado desde el sitio web.'
-              ].filter(Boolean).join('\n'),
-              start: { dateTime: `${b.fecha}T${b.hora}:00${OFF}`, timeZone: TZ },
-              end: { dateTime: `${b.fecha}T${hhmm(mins + dur)}:00${OFF}`, timeZone: TZ }
-            })
-          }
-        );
+        const calBase = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(env.CAL_CITAS)}/events`;
+        const res = await fetch(calBase, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            summary: `${lim(b.servicio)} · ${lim(b.nombre)}`,
+            location: info.nombre,          // ← define a qué sucursal pertenece
+            colorId: info.color,            // ← color distinto por sucursal
+            /* Marca legible por máquina: es la señal definitiva de si la
+               cita consume a la Dra., y no depende de cómo se escriba el
+               título. Google la guarda y no la muestra en la interfaz. */
+            extendedProperties: {
+              private: {
+                dra: requiereDra ? '1' : '0',
+                sede: info.nombre,
+                servicio: normDra(b.servicio).slice(0, 120)
+              }
+            },
+            description: [
+              `Paciente: ${lim(b.nombre)}`,
+              `Teléfono: ${lim(b.telefono)}`,
+              `Correo: ${lim(b.email)}`,
+              `Servicio: ${lim(b.servicio)}${b.precio ? ' · ' + lim(b.precio) : ''}`,
+              `Sucursal: ${info.nombre}`,
+              `Promociones: ${b.promos === true ? 'Sí' : 'No'}`,
+              b.nota ? `Nota del paciente: ${lim(b.nota)}` : '',
+              '', 'Reservado desde el sitio web.'
+            ].filter(Boolean).join('\n'),
+            start: { dateTime: `${b.fecha}T${b.hora}:00${OFF}`, timeZone: TZ },
+            end: { dateTime: `${b.fecha}T${hhmm(mins + dur)}:00${OFF}`, timeZone: TZ }
+          })
+        });
         const ev = await res.json();
         if (!res.ok) return json({ ok: false, error: 'No se pudo guardar la cita: ' + ((ev.error && ev.error.message) || res.status) }, 502, request, env);
+
+        /* Segunda revisión, ya con la cita escrita. Entre la primera lectura
+           y la escritura pasa uno o dos segundos: si en ese rato entró otra
+           reserva incompatible (otra paciente en la misma cabina, o en la
+           otra sede para la Dra.), las dos vieron el hueco libre. Se vuelve a
+           leer el día y, si esta cita ya no cabe descontándose a sí misma, se
+           retira y se avisa. Si las dos chocan entre sí, se retiran las dos:
+           es mejor que una paciente reintente a que dos lleguen a la misma
+           hora. Si la segunda lectura falla, la cita se queda: la primera
+           revisión ya la aprobó. */
+        try {
+          const ag2 = sinEvento(await agendaDe(env, instant(b.fecha, 0), instant(addDays(b.fecha, 1), 0)), ev.id);
+          const re = freeSlots(b.fecha, dur, ag2, suc, cupos, now, { requiereDra, sinLead: true });
+          if (!re.turnos.some(t => t.h === b.hora)) {
+            await fetch(`${calBase}/${encodeURIComponent(ev.id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+            const motivo = (re.bloqueados.find(x => x.hora === b.hora) || {}).motivo || 'ocupada';
+            return json({
+              ok: false, motivo, error: mensaje409(motivo),
+              sugerencia: sugerenciaPara(env, b.fecha, dur, ag2, suc, now, {
+                requiereDra, bloqueados: re.bloqueados
+              })
+            }, 409, request, env);
+          }
+        } catch (e) { /* la cita se queda: ya pasó la primera revisión */ }
 
         // La cita ya quedó en el calendario. Además la registramos en la base
         // de datos para que la paciente tenga historial desde el primer día.
@@ -1319,7 +1410,7 @@ export default {
         /* Aquí sí valen todas las reglas de una reserva normal: quien está del
            otro lado es la paciente, no la Dra. No hay "guardar de todos modos". */
         if (!WORKDAYS.includes(dowOf(fecha))) return json({ ok: false, error: 'Ese día el consultorio no abre.' }, 409, request, env);
-        if (mins < OPEN || mins + dur > CLOSE) return json({ ok: false, error: 'Ese horario está fuera del horario de atención.' }, 409, request, env);
+        if (mins < OPEN || mins + dur > cierreDe(fecha, suc)) return json({ ok: false, error: fueraDeHorario(fecha, suc) }, 409, request, env);
         if (fecha > addDays(now.date, MAX_AHEAD)) return json({ ok: false, error: 'Esa fecha está muy lejos. Elige otra más cercana.' }, 409, request, env);
         if (fecha < now.date || (fecha === now.date && mins < now.mins + LEAD_MIN)) {
           return json({ ok: false, error: 'Ese horario ya pasó. Elige otro.' }, 409, request, env);
@@ -1478,7 +1569,7 @@ export default {
 
         const avisos = [];
         if (!WORKDAYS.includes(dowOf(fecha))) avisos.push('ese día el consultorio no abre');
-        if (mins < OPEN || mins + dur > CLOSE) avisos.push(`la cita se sale del horario de ${hhmm(OPEN)} a ${hhmm(CLOSE)}`);
+        if (mins < OPEN || mins + dur > cierreDe(fecha, suc)) avisos.push(`la cita se sale del horario de ${hhmm(OPEN)} a ${hhmm(cierreDe(fecha, suc))}${cierreDe(fecha, suc) !== CLOSE ? ` (${SUCURSALES[suc].nombre} cierra temprano los sábados)` : ''}`);
         if (info && !esPersonal) {
           /* Se lee el día ENTERO, no solo el tramo: las reglas de la Dra.
              dependen de todas sus citas de ese día, en las dos sucursales. */
@@ -1796,6 +1887,53 @@ export default {
         return json({ ok: true }, 200, request, env);
       }
 
+      /* ── panel: marcar una cita como confirmada o pendiente ──
+         Solo toca extendedProperties.private.confirmada ('1' / '0'); el
+         título, la hora y la descripción quedan igual. Se lee el evento y se
+         manda el mapa privado completo para no pisar las otras marcas que
+         guarda la web (servicio, dra…). */
+      if (path === '/api/citas/confirmar' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        const id = String(b.id || '').trim();
+        if (!id || typeof b.confirmada !== 'boolean') {
+          return json({ ok: false, error: 'Falta el id de la cita o si está confirmada.' }, 400, request, env);
+        }
+        const esPersonal = b.calendario === 'personal';
+        const calId = esPersonal ? env.CAL_PERSONAL : env.CAL_CITAS;
+        if (!calId) return json({ ok: false, error: 'Ese calendario no está configurado.' }, 400, request, env);
+
+        const token = await getToken(env);
+        const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${encodeURIComponent(id)}`;
+        const previa = await fetch(base, { headers: { Authorization: `Bearer ${token}` } });
+        const ev = await previa.json();
+        if (!previa.ok) {
+          return json({ ok: false, error: 'No se encontró esa cita: ' + ((ev.error && ev.error.message) || previa.status) }, 404, request, env);
+        }
+        if (ev.status === 'cancelled') return json({ ok: false, error: 'Esa cita está cancelada.' }, 409, request, env);
+
+        const priv = { ...((ev.extendedProperties && ev.extendedProperties.private) || {}) };
+        priv.confirmada = b.confirmada ? '1' : '0';
+        if (b.confirmada) priv.confirmadaEl = localNow().date; else delete priv.confirmadaEl;
+        const res = await fetch(base, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ extendedProperties: { ...(ev.extendedProperties || {}), private: priv } })
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          const pista = (res.status === 403 && esPersonal)
+            ? ' Esta cita está en el calendario personal de la Dra., que la cuenta de servicio solo puede leer. Comparte ese calendario con permiso de "Hacer cambios en los eventos" para poder marcarla desde aquí.'
+            : '';
+          return json({ ok: false, error: 'No se pudo guardar la confirmación: ' + ((d.error && d.error.message) || res.status) + pista }, 502, request, env);
+        }
+        return json({ ok: true, confirmada: b.confirmada }, 200, request, env);
+      }
+
       /* ── panel: cancelar una cita ──
          Igual que cuando la paciente cancela desde su enlace (mismo sello,
          mismo PATCH+DELETE), pero iniciado por la Dra. desde el panel. La cita
@@ -1997,14 +2135,40 @@ export default {
         return json({ ok: true }, 200, request, env);
       }
 
-      /* ── un paciente firma su consentimiento (público, sin clave —
-         el enlace mismo, con su token que vence a los 20 min, es el acceso) ── */
+      /* ── panel: firmar el enlace de consentimiento que se le manda al paciente ──
+         El enlace lleva los datos del documento (procedimiento, sucursal, nota
+         y la hora en que se generó). Antes lo armaba el navegador solo, y
+         cualquiera que viera uno podía fabricar otros y meter documentos
+         "firmados" en la base. Ahora el panel pide aquí, con su clave, una
+         firma de esos datos; el paciente la devuelve al firmar y se verifica. */
+      if (path === '/api/consentimientos/enlace' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        const f = String(b.f || '');
+        if (!f || f.length > 4000) return json({ ok: false, error: 'Datos del enlace inválidos.' }, 400, request, env);
+        return json({ ok: true, s: await firmar(env, 'consent-v1', f) }, 200, request, env);
+      }
+
+      /* ── un paciente firma su consentimiento (público, sin clave — el
+         acceso es el enlace firmado por el panel, que vence a los 20 min) ── */
       if (path === '/api/consentimientos' && request.method === 'POST') {
         if (!env.DB) return json({ ok: false, error: 'Falta conectar la base de datos en Cloudflare.' }, 500, request, env);
         const b = await request.json().catch(() => ({}));
 
+        /* la firma primero: sin ella no se mira nada más */
+        const crudo = String(b.token || '');
+        let esperado = '';
+        try { esperado = await firmar(env, 'consent-v1', crudo); } catch (e) { /* sin clave configurada */ }
+        if (!crudo || !esperado || !claveOk(String(b.sello || ''), esperado)) {
+          return json({ ok: false, error: 'Este enlace no es válido. Pídele a la clínica uno nuevo.' }, 401, request, env);
+        }
+
         let tok;
-        try { tok = JSON.parse(decodeURIComponent(escape(atob(String(b.token || ''))))); }
+        try { tok = JSON.parse(decodeURIComponent(escape(atob(crudo)))); }
         catch (e) { return json({ ok: false, error: 'Enlace inválido.' }, 400, request, env); }
         if (!tok.t || Date.now() - tok.t > 20 * 60 * 1000) {
           return json({ ok: false, error: 'Este enlace ya venció.' }, 410, request, env);
@@ -2016,13 +2180,16 @@ export default {
         }
         if (!b.signature) return json({ ok: false, error: 'Falta la firma.' }, 400, request, env);
 
+        /* El procedimiento y la sucursal salen del enlace firmado, no de lo
+           que mande el navegador: así nadie puede firmar un procedimiento
+           distinto al que la Dra. le envió. */
         const pacienteId = await upsertPaciente(env, {
           nombre: p.name, identificacion: p.identification, telefono: p.phone, correo: p.email, antecedentes: p.history
         });
         const res = await env.DB.prepare(
           `INSERT INTO consentimientos (paciente_id, procedimiento, sucursal, nota, foto_autorizada, texto, firma, estado)
            VALUES (?, ?, ?, ?, ?, ?, ?, 'Firmado')`
-        ).bind(pacienteId, String(b.procedure || ''), String(b.branch || ''), String(b.note || ''),
+        ).bind(pacienteId, String(tok.p || b.procedure || ''), String(tok.b || b.branch || ''), String(tok.o || b.note || ''),
           b.photoConsent ? 1 : 0, String(b.text || ''), String(b.signature || '')).run();
 
         return json({ ok: true, id: res.meta.last_row_id }, 200, request, env);
@@ -2091,14 +2258,10 @@ export default {
         return json({ ok: true, pacientes: results }, 200, request, env);
       }
 
-      /* ── panel: recuperación de pacientes ──
-         Cada paciente con su historial de visitas (todas, no solo el último
-         año: la base de datos guarda lo que se haya sincronizado), sus citas
-         por delante y sus contactos ("Contacto · … · le escribí / respondió,
-         más adelante / no le interesa", ver /api/citas/nota). Con eso el
-         panel sabe en qué va cada contacto y si agendó después.
-         El panel decide quién lleva demasiado tiempo sin venir; aquí no se
-         filtra por días para que el umbral se pueda cambiar sin volver a pedir. */
+      /* ── panel: historial completo de todas las pacientes (pestaña Recuperación) ──
+         Una fila por paciente con sus visitas ya pasadas, sus próximas citas y
+         sus notas de seguimiento. Las canceladas no cuentan. "Hoy" es el de
+         Santo Domingo (UTC-4, sin horario de verano). */
       if (path === '/api/pacientes/recuperacion' && request.method === 'POST') {
         if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
         const b = await request.json().catch(() => ({}));
@@ -2107,34 +2270,31 @@ export default {
           return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
         }
         if (!env.DB) return json({ ok: false, error: 'Falta conectar la base de datos en Cloudflare.' }, 500, request, env);
-        const hoy = localNow().date;
-        const SEP = '\u001f', FILA = '\u001e';
-        const { results } = await env.DB.prepare(`
-          SELECT p.id, p.nombre, p.telefono, p.correo,
-            GROUP_CONCAT(CASE WHEN c.fecha >= ?
-              THEN c.fecha || ? || c.servicio || ? || c.sucursal || ? || c.cita_id || ? || c.origen END, ?) AS proximas,
-            GROUP_CONCAT(CASE WHEN c.fecha < ?
-              THEN c.fecha || ? || c.servicio || ? || c.sucursal || ? || c.cita_id || ? || c.origen END, ?) AS visitas,
-            (SELECT GROUP_CONCAT(date(n.creado_en, '-4 hours') || ? || n.nota, ?) FROM notas_seguimiento n
-              WHERE n.paciente_id = p.id AND n.nota LIKE 'Contact%') AS contactos
-          FROM pacientes p
-          JOIN citas c ON c.paciente_id = p.id AND c.estado != 'Cancelada'
-          GROUP BY p.id
-        `).bind(hoy, SEP, SEP, SEP, SEP, FILA, hoy, SEP, SEP, SEP, SEP, FILA, SEP, FILA).all();
-        const citasDe = txt => String(txt || '').split(FILA).filter(Boolean).map(v => {
-          const [fecha, servicio, sucursal, id, origen] = v.split(SEP);
-          return { fecha, servicio, sucursal, id, origen };
-        });
-        const pacientes = results.map(r => ({
-          id: r.id, nombre: r.nombre, telefono: r.telefono, correo: r.correo,
-          visitas: citasDe(r.visitas),
-          proximas: citasDe(r.proximas),
-          contactos: String(r.contactos || '').split(FILA).filter(Boolean).map(v => {
-            const [fecha, nota] = v.split(SEP);
-            return { fecha, nota };
-          })
-        })).filter(p => p.visitas.length);
-        return json({ ok: true, hoy, pacientes }, 200, request, env);
+        const hoy = new Date(Date.now() - 4 * 3600 * 1000).toISOString().slice(0, 10);
+        const [pac, citas, notas] = await env.DB.batch([
+          env.DB.prepare(`SELECT p.id, p.nombre, p.telefono, p.correo FROM pacientes p
+                          WHERE EXISTS (SELECT 1 FROM citas c WHERE c.paciente_id = p.id)`),
+          env.DB.prepare(`SELECT paciente_id, cita_id, fecha, hora, servicio, sucursal, estado FROM citas
+                          WHERE coalesce(estado, '') <> 'Cancelada' ORDER BY fecha, hora`),
+          env.DB.prepare(`SELECT paciente_id, cita_id, nota, date(creado_en) AS fecha FROM notas_seguimiento
+                          ORDER BY creado_en`)
+        ]);
+        const porId = new Map();
+        for (const p of pac.results) {
+          porId.set(p.id, { nombre: p.nombre || '', telefono: p.telefono || '', correo: p.correo || '', visitas: [], proximas: [], contactos: [] });
+        }
+        for (const c of citas.results) {
+          const p = porId.get(c.paciente_id);
+          if (!p) continue;
+          const v = { id: c.cita_id, fecha: c.fecha, hora: c.hora, servicio: c.servicio, sucursal: c.sucursal, estado: c.estado };
+          (c.fecha >= hoy ? p.proximas : p.visitas).push(v);
+        }
+        for (const n of notas.results) {
+          const p = porId.get(n.paciente_id);
+          if (p) p.contactos.push({ fecha: n.fecha, nota: n.nota, cita: n.cita_id });
+        }
+        const pacientes = [...porId.values()].filter(p => p.visitas.length || p.proximas.length);
+        return json({ ok: true, pacientes }, 200, request, env);
       }
 
       /* ── panel: historial completo de un paciente ── */
@@ -2228,7 +2388,7 @@ export default {
 export {
   clasificarEventos, mezclarAgendas, sinEvento, cierraPara, pico,
   citasDraDelDia, conflictoDra, freeSlots, sugerenciaPara,
-  esServicioDra, eventoEsDra, claveSucursal, normDra, notasSeguimiento,
+  esServicioDra, eventoEsDra, claveSucursal, normDra, notasSeguimiento, firmar,
   SUCURSALES, SERVICIOS_DRA, PALABRAS_DRA,
-  TRASLADO_MIN, MAX_CAMBIOS_SEDE, BUFFER_DRA_MIN, AGENDA_VACIA
+  TRASLADO_MIN, MAX_CAMBIOS_SEDE, BUFFER_DRA_MIN, MAX_A_LA_VEZ_DRA, AGENDA_VACIA
 };
