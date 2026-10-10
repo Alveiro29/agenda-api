@@ -109,6 +109,9 @@
                            Cada cita trae sus notas de seguimiento en
                            "seguimientos" — el panel las usa para las alertas
                            de revisión y de recuperación de pacientes.
+     POST /api/citas/todas (panel interno · TODO el historial, sin rango de
+                           fechas: es lo que usa el buscador del panel, que
+                           busca a la paciente en todos los tiempos)
      POST /api/citas/nota  (panel interno · agrega una nota de seguimiento a una cita)
      POST /api/citas/editar (panel interno · cambia servicio, sucursal, fecha/hora
                              y datos del paciente de una cita que aún no ha pasado)
@@ -155,6 +158,7 @@ const LEAD_MIN = 120;              // mínimo 2 h de antelación
 const MAX_AHEAD = 365;             // se agenda hasta un año adelante
 const CUPOS_DEF = 2;               // cabinas por sucursal
 const CANCELA_DEF = 24;            // horas de antelación para que la paciente cancele sola
+const HISTORIA_DESDE = '2020-01-01'; // desde cuándo busca el buscador del panel (antes no hay citas)
 const CIERRE_TOTAL = /cerrad|bloque|feriad|vacacion|no agendar|inhabil|inhábil/i;
 
 /* ── La Dra. como recurso (ver la explicación de arriba) ── */
@@ -1008,7 +1012,7 @@ export default {
 
         return json({
           ok: true,
-          version: 'dra-2sedes-4-contactos',
+          version: 'dra-2sedes-5-buscador',
           cuentaDeServicio: sa.client_email,
           horario: `${hhmm(OPEN)}–${hhmm(CLOSE)} · días ${WORKDAYS.join(',')} (0=dom)`,
           sucursales: Object.values(SUCURSALES).map(s => `${s.nombre}: ${nInt(env[s.cupos], CUPOS_DEF)} cabinas`),
@@ -1719,6 +1723,26 @@ export default {
         }
         const citas = await listarCitas(env, desde, hasta);
         return json({ ok: true, total: citas.length, citas }, 200, request, env);
+      }
+
+      /* ── todo el historial, para el buscador del panel ──
+         Buscar a una paciente no debería depender de adivinar en qué mes
+         vino. Esto trae todas las citas desde HISTORIA_DESDE hasta un año
+         adelante (más allá no se agenda) y el panel filtra en memoria:
+         la primera búsqueda tarda un par de segundos, las demás son al
+         instante. Google pagina de 2500 en 2500, así que el tamaño del
+         historial no es problema. */
+      if (path === '/api/citas/todas' && request.method === 'POST') {
+        if (!env.PANEL_CLAVE) {
+          return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+        }
+        const b = await request.json().catch(() => ({}));
+        if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+          await new Promise(r => setTimeout(r, 700));
+          return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+        }
+        const citas = await listarCitas(env, instant(HISTORIA_DESDE, 0), instant(addDays(localNow().date, 366), 0));
+        return json({ ok: true, total: citas.length, desde: HISTORIA_DESDE, citas }, 200, request, env);
       }
 
       /* ── agregar nota de seguimiento a una cita ──

@@ -57,7 +57,7 @@ aquí, el panel se entera solo** — no hay que tocar el front.
 El sitio [`sitio-katherin`](https://github.com/Alveiro29/sitio-katherin):
 
 - `js/booking.js` → `/api/disponibilidad`, `/api/reservar`
-- `js/citas.js` y `js/seguimiento.js` → `/api/citas`, `/api/citas/nota`, `/api/citas/editar`, `/api/citas/cancelar`,
+- `js/citas.js` y `js/seguimiento.js` → `/api/citas`, `/api/citas/todas`, `/api/citas/nota`, `/api/citas/editar`, `/api/citas/cancelar`,
   `/api/bloqueos`, `/api/bloqueos/crear`, `/api/bloqueos/borrar`, `/api/salud`,
   `/api/pacientes/recuperacion`
 - `js/mi-cita.js` → `/api/cita`, `/api/cita/horarios`, `/api/cita/cancelar`, `/api/cita/mover`
