@@ -445,11 +445,18 @@ async function getToken(env) {
                      legible (su calendario personal sin Ubicación).
                      Bloquea sus procedimientos, pero no cuenta para las
                      reglas A ni B: no se puede asumir dónde está.         */
+/* Una cita cancelada: borrada en Google, o con "CANCELADA" al inicio del
+   título. Lo segundo pasa cuando alguien la marca a mano en el calendario
+   en vez de borrarla, o cuando el panel alcanzó a ponerle el título pero el
+   borrado falló. Sin esto salía como "Agendada" (y "pendiente de
+   confirmación" en la lista de WhatsApp) y seguía ocupando su cabina. */
+const eventoCancelado = ev => ev.status === 'cancelled' || /^\s*cancelad[ao]s?\b/i.test(ev.summary || '');
+
 function clasificarEventos(items, esPersonal) {
   const ocupa = [], cierra = [], cierraSucursal = [], dra = [], draOcupa = [];
 
   for (const ev of items || []) {
-    if (ev.status === 'cancelled') continue;
+    if (eventoCancelado(ev)) continue;
 
     const forzado = CIERRE_TOTAL.test(ev.summary || '');
     // "Disponible" no bloquea, salvo que el título lo fuerce
@@ -988,7 +995,7 @@ async function listarCitas(env, timeMin, timeMax) {
     const t1 = new Date((ev.end && (ev.end.dateTime || `${ev.end.date}T00:00:00${OFF}`)) || t0);
     const local = new Date(t0.getTime() - 4 * 3600 * 1000).toISOString();
 
-    const cancelada = ev.status === 'cancelled';
+    const cancelada = eventoCancelado(ev);
     const sucKey = claveSucursal(ev.location);
 
     filas.push({
@@ -1025,7 +1032,7 @@ async function listarCitas(env, timeMin, timeMax) {
       const t1 = new Date((ev.end && ev.end.dateTime) || t0);
       const local = new Date(t0.getTime() - 4 * 3600 * 1000).toISOString();
 
-      const cancelada = ev.status === 'cancelled';
+      const cancelada = eventoCancelado(ev);
       const sucKey = claveSucursal(ev.location);
 
       filas.push({
@@ -2821,7 +2828,7 @@ export default {
 export {
   clasificarEventos, mezclarAgendas, sinEvento, cierraPara, pico,
   citasDraDelDia, conflictoDra, freeSlots, sugerenciaPara,
-  esServicioDra, eventoEsDra, claveSucursal, normDra, notasSeguimiento, firmar,
+  esServicioDra, eventoEsDra, eventoCancelado, claveSucursal, normDra, notasSeguimiento, firmar,
   SUCURSALES, SERVICIOS_DRA, PALABRAS_DRA,
   TRASLADO_MIN, MAX_CAMBIOS_SEDE, BUFFER_DRA_MIN, MAX_A_LA_VEZ_DRA, AGENDA_VACIA
 };
