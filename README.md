@@ -64,6 +64,22 @@ El sitio [`sitio-katherin`](https://github.com/Alveiro29/sitio-katherin):
   `/api/pacientes/recuperacion`
 - `js/mi-cita.js` → `/api/cita`, `/api/cita/horarios`, `/api/cita/cancelar`, `/api/cita/mover`
 - `js/consent.js` → `/api/consentimientos*`, `/api/pacientes*`
+- `js/encuesta.js` → `/api/encuesta`, `/api/encuesta/responder`, `/api/encuesta/google`
+- `js/opiniones.js` (panel oculto `/opiniones`) → `/api/encuestas*`, `/api/resenas*`
+
+## Encuestas y Google Maps
+
+Al terminar cada cita la paciente recibe un enlace a una encuesta de
+1–5 estrellas (por WhatsApp desde el panel `/opiniones`, o solo por correo
+si se configura Resend + un Cron Trigger). La tabla `encuestas` se crea sola
+en D1 la primera vez.
+
+Google no permite publicar reseñas en nombre de nadie: la encuesta le deja
+el comentario copiado y le abre el formulario de reseña de la sucursal que
+eligió (se le ofrece a todas, no solo a las de 4–5★: pedírsela solo a las
+contentas va contra las políticas de Google). Las reseñas que ya están en
+Maps se leen y se responden desde el panel vía Google Business Profile.
+Las variables necesarias están en la cabecera de `worker.js`.
 
 ## Comprobar que lo desplegado es lo correcto
 

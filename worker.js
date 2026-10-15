@@ -45,6 +45,28 @@
                       alcance del calendario personal ahora es correcto por
                       diseño (ver más abajo). Se sigue leyendo solo para
                       reportarla en /api/salud y no romper la configuración.
+     SITIO_URL        dominio del sitio para los enlaces que salen por correo
+                      (por defecto https://drakatherinalmonte.com)
+
+   ── ENCUESTAS Y GOOGLE MAPS (todo opcional) ─────────────────
+   Botón "Publicar en Google" de la encuesta (variables tipo Text):
+     GOOGLE_PLACE_GAZCUE  enlace para pedir reseñas de la ficha de Gazcue
+     GOOGLE_PLACE_SDN     ídem, ficha de Santo Domingo Norte
+                      · el más fácil: business.google.com → la ficha →
+                        "Pedir reseñas" → copiar (https://g.page/r/…/review)
+                      · también vale el Place ID (empieza por "ChIJ…")
+   Correo automático al terminar la cita (si faltan, se manda por WhatsApp
+   desde el panel /opiniones):
+     RESEND_API_KEY      secret · cuenta de resend.com con el dominio verificado
+     ENCUESTA_REMITENTE  p. ej. "Skin Lab <citas@drakatherinalmonte.com>"
+     + un Cron Trigger (Settings → Triggers → Cron) con "0 * * * *"
+   Leer y responder las reseñas de Maps desde el panel (secrets):
+     GBP_CLIENT_ID, GBP_CLIENT_SECRET  cliente OAuth "Web" de Google Cloud con
+                      la API "Google My Business" habilitada (hay que pedir
+                      acceso a Google: tarda unos días)
+     GBP_REFRESH_TOKEN  token de la cuenta DUEÑA de las fichas, con el scope
+                      https://www.googleapis.com/auth/business.manage
+     GBP_CUENTA       "accounts/123…"   GBP_LOC_GAZCUE / GBP_LOC_SDN  "locations/456…"
 
    ── LOS DOS RECURSOS DE LA CLÍNICA ─────────────────────────
    Hay dos, y solo dos:
@@ -159,6 +181,16 @@
      POST /api/consentimientos/lista    (panel interno · documentos firmados)
      POST /api/consentimientos/uno      (panel interno · un documento completo, para ver/imprimir)
      POST /api/consentimientos/borrar   (panel interno · borra un documento firmado)
+
+     GET  /api/encuesta?t=TOKEN         (público · la encuesta de satisfacción de una cita)
+     POST /api/encuesta/responder       (público · estrellas + comentario, una sola vez)
+     POST /api/encuesta/google          (público · anota que tocó "Publicar en Google")
+     POST /api/encuestas/por-enviar     (panel · citas atendidas con su enlace de encuesta)
+     POST /api/encuestas/marcar-enviada (panel · anota que se mandó por WhatsApp)
+     POST /api/encuestas                (panel · todas las respuestas)
+     POST /api/encuestas/atender        (panel · respuesta privada + nota; va al historial)
+     POST /api/resenas                  (panel · reseñas de Google Maps de las 2 sucursales)
+     POST /api/resenas/responder        (panel · publica la respuesta en Google Maps)
    ───────────────────────────────────────────────────────────── */
 
 /* ── Reglas del consultorio ── */
@@ -296,8 +328,8 @@ function eventoEsDra(ev) {
 /* Sucursales. color = colorId de Google Calendar
    (2 = Sage/verde · 4 = Flamingo/rosa — a tono con la marca) */
 const SUCURSALES = {
-  gazcue: { nombre: 'Gazcue', color: '2', re: /gazcue|m[aá]ximo\s*cabral|energ[ií]a\s*vital/i, cupos: 'CUPOS_GAZCUE' },
-  sdn: { nombre: 'Santo Domingo Norte', color: '4', re: /norte|villa\s*mella|majluta|jardines\s*del\s*arroyo|\bsdn\b/i, cupos: 'CUPOS_SDN' }
+  gazcue: { nombre: 'Gazcue', color: '2', re: /gazcue|m[aá]ximo\s*cabral|energ[ií]a\s*vital/i, cupos: 'CUPOS_GAZCUE', place: 'GOOGLE_PLACE_GAZCUE', gbp: 'GBP_LOC_GAZCUE' },
+  sdn: { nombre: 'Santo Domingo Norte', color: '4', re: /norte|villa\s*mella|majluta|jardines\s*del\s*arroyo|\bsdn\b/i, cupos: 'CUPOS_SDN', place: 'GOOGLE_PLACE_SDN', gbp: 'GBP_LOC_SDN' }
 };
 const claveSucursal = txt => {
   const s = String(txt || '');
@@ -740,6 +772,7 @@ const restoDescripcion = d => String(d || '')
    que la firma de uno no sirva para el otro:
      · "mi cita"         → prefijo cita-v1
      · consentimiento    → prefijo consent-v1
+     · encuesta          → prefijo encuesta-v1
    No se pueden inventar ni cambiar: llevan una firma HMAC hecha con un
    secreto que solo conoce el servidor. La clave sale de CITA_SECRET si
    existe y, si no, se deriva de PANEL_CLAVE, para no tener que configurar
@@ -760,21 +793,23 @@ const b64urlTxt = t => btoa(String.fromCharCode(...new TextEncoder().encode(t)))
 const deB64urlTxt = t => new TextDecoder().decode(
   Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
 
-const firmarCita = (env, payload) => firmar(env, 'cita-v1', payload);
+/* prefijo: 'cita-v1' para "mi cita", 'encuesta-v1' para la encuesta de
+   satisfacción — un enlace no sirve como el otro. */
+const firmarCita = (env, payload, prefijo) => firmar(env, prefijo || 'cita-v1', payload);
 
-async function tokenCita(env, id, calendario, venceEn) {
+async function tokenCita(env, id, calendario, venceEn, prefijo) {
   const p = b64urlTxt(JSON.stringify({ i: id, c: calendario === 'personal' ? 'p' : 'c', x: venceEn }));
-  return p + '.' + await firmarCita(env, p);
+  return p + '.' + await firmarCita(env, p, prefijo);
 }
 
 /* Devuelve { id, calendario } o null si el token está roto, falsificado o vencido. */
-async function leerTokenCita(env, token) {
+async function leerTokenCita(env, token, prefijo) {
   const t = String(token || '');
   const corte = t.lastIndexOf('.');
   if (corte < 1) return null;
   const payload = t.slice(0, corte), firma = t.slice(corte + 1);
   let esperada;
-  try { esperada = await firmarCita(env, payload); } catch (e) { return null; }
+  try { esperada = await firmarCita(env, payload, prefijo); } catch (e) { return null; }
   if (!claveOk(firma, esperada)) return null;         // comparación en tiempo constante
   let d;
   try { d = JSON.parse(deB64urlTxt(payload)); } catch (e) { return null; }
@@ -1018,6 +1053,229 @@ async function listarCitas(env, timeMin, timeMax) {
 
   filas.sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
   return filas;
+}
+
+/* ── encuestas de satisfacción ────────────────────────────────────────
+   Cuando una cita termina, la paciente recibe un enlace personal (firmado,
+   como el de "mi cita") a una encuesta corta: estrellas + comentario.
+   Todo queda en la tabla "encuestas"; el panel oculto (/opiniones) la lee.
+
+   Sobre Google: la API de Google Business Profile NO deja publicar reseñas
+   en nombre de nadie — cada reseña la tiene que escribir la propia persona
+   con su cuenta. Lo que sí hacemos es llevarla, ya con su comentario copiado,
+   al formulario de reseña de la sucursal que elija. Y las reseñas que ya
+   están en Maps se pueden leer y responder desde el panel (eso sí lo permite
+   la API, con la cuenta dueña del perfil).
+
+   La tabla se crea sola la primera vez: no hay que correr nada a mano en D1. */
+const ENCUESTA_DIAS = 45;          // el enlace vale 45 días después de la cita
+const ENCUESTA_VENTANA = 14;       // el panel ofrece enviar las de las últimas 2 semanas
+const ENCUESTA_NS = 'encuesta-v1';   // prefijo de firma (ver firmar)
+
+let encuestasListas = false;
+async function tablaEncuestas(env) {
+  if (encuestasListas) return;
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS encuestas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cita_id TEXT NOT NULL UNIQUE,
+    calendario TEXT NOT NULL DEFAULT 'citas',
+    nombre TEXT, telefono TEXT, correo TEXT,
+    servicio TEXT, sucursal TEXT, fecha_cita TEXT, hora_cita TEXT,
+    creada_en TEXT NOT NULL DEFAULT (datetime('now')),
+    enviada_en TEXT, enviada_por TEXT,
+    estrellas INTEGER, comentario TEXT, sucursal_resena TEXT, respondida_en TEXT,
+    google_click_en TEXT,
+    atendida_en TEXT, respuesta TEXT, nota_interna TEXT
+  )`).run();
+  encuestasListas = true;
+}
+
+const tokenEncuesta = (env, row) => tokenCita(env, row.cita_id, row.calendario,
+  Math.floor(instant(row.fecha_cita, 0).getTime() / 1000) + (ENCUESTA_DIAS + 1) * 86400, ENCUESTA_NS);
+
+/* Enlace al formulario "escribir reseña" de la sucursal en Google Maps.
+   GOOGLE_PLACE_* acepta el enlace que da el propio perfil de Google
+   ("Pedir reseñas" → https://g.page/r/…/review) o el Place ID (ChIJ…).
+   Sin él, no hay botón de Google: mejor nada que mandar a la paciente a la
+   ficha equivocada. */
+function googleResenaUrl(env, sucursal) {
+  const k = claveSucursal(sucursal);
+  const v = k ? String(env[SUCURSALES[k].place] || '').trim() : '';
+  if (!v) return '';
+  if (/^https:\/\/[^\s"'<>]+$/.test(v)) return v;
+  return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(v)}`;
+}
+
+/* Citas que ya terminaron en el rango, listas para pedirles opinión.
+   Fuera: canceladas, bloqueos de día completo y lo que aún no ha pasado. */
+async function citasParaEncuesta(env, desde, hasta) {
+  const filas = await listarCitas(env, instant(desde, 0), instant(addDays(hasta, 1), 0));
+  return filas.filter(c => c.estado === 'Atendida' && !c.diaCompleto
+    && c.nombre && c.nombre !== '—' && !CIERRE_TOTAL.test(c.nombre));
+}
+
+/* Una fila por cita (cita_id es único): repetir no duplica. Los datos se
+   refrescan desde la agenda mientras la paciente no haya contestado. */
+async function registrarEncuestas(env, citas) {
+  await tablaEncuestas(env);
+  const ins = env.DB.prepare(`
+    INSERT INTO encuestas (cita_id, calendario, nombre, telefono, correo, servicio, sucursal, fecha_cita, hora_cita)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(cita_id) DO UPDATE SET
+      nombre = excluded.nombre, telefono = excluded.telefono, correo = excluded.correo,
+      servicio = excluded.servicio, sucursal = excluded.sucursal,
+      fecha_cita = excluded.fecha_cita, hora_cita = excluded.hora_cita
+    WHERE encuestas.respondida_en IS NULL`);
+  const stmts = citas.map(c => ins.bind(
+    String(c.id), c.origen === 'Personal' ? 'personal' : 'citas',
+    String(c.nombre || ''), String(c.telefono || ''), String(c.email || '').trim().toLowerCase(),
+    String(c.servicio || ''), String(c.sucursal || ''), String(c.fecha || ''), String(c.hora || '')));
+  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+}
+
+/* Lo que ve la paciente. Solo su primer nombre: si el enlace se reenvía,
+   no viajan su teléfono ni su correo. */
+function vistaEncuesta(env, row) {
+  return {
+    nombre: String(row.nombre || '').trim().split(/\s+/)[0] || '',
+    servicio: row.servicio || '',
+    sucursal: row.sucursal || '',
+    fecha: row.fecha_cita || '',
+    respondida: !!row.respondida_en,
+    estrellas: row.estrellas || 0,
+    sucursales: Object.values(SUCURSALES).map(v => v.nombre),
+    google: row.respondida_en ? googleResenaUrl(env, row.sucursal_resena || row.sucursal) : ''
+  };
+}
+
+/* ── correo automático de la encuesta (opcional) ──
+   Corre en el cron del Worker. Solo hace algo si están RESEND_API_KEY y
+   ENCUESTA_REMITENTE. Manda a quienes terminaron su cita hace entre 2 y
+   48 horas y dejaron correo; de 9 a.m. a 8 p.m., para no escribir de noche.
+   Nunca dos veces a la misma cita (enviada_en). */
+async function enviarEncuestasPorCorreo(env) {
+  if (!env.DB || !env.RESEND_API_KEY || !env.ENCUESTA_REMITENTE) return 0;
+  const now = localNow();
+  if (now.mins < 9 * 60 || now.mins >= 20 * 60) return 0;
+
+  const ahora = Date.now();
+  const citas = (await citasParaEncuesta(env, addDays(now.date, -2), now.date)).filter(c => {
+    const fin = instant(c.fecha, +c.hora.slice(0, 2) * 60 + +c.hora.slice(3, 5) + (c.duracion || 0)).getTime();
+    return ahora - fin >= 2 * 3600e3 && ahora - fin <= 48 * 3600e3;
+  });
+  if (!citas.length) return 0;
+  await registrarEncuestas(env, citas);
+
+  const sitio = String(env.SITIO_URL || 'https://drakatherinalmonte.com').replace(/\/+$/, '');
+  let enviadas = 0;
+  for (const c of citas) {
+    const row = await env.DB.prepare(
+      "SELECT * FROM encuestas WHERE cita_id = ? AND enviada_en IS NULL AND respondida_en IS NULL AND correo LIKE '%@%'"
+    ).bind(String(c.id)).first();
+    if (!row) continue;
+    const link = `${sitio}/encuesta?t=${await tokenEncuesta(env, row)}`;
+    const nombre = vistaEncuesta(env, row).nombre;
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: env.ENCUESTA_REMITENTE,
+        to: [row.correo],
+        subject: '¿Cómo te fue en tu cita?',
+        text: `Hola${nombre ? ' ' + nombre : ''}:\n\nGracias por venir a Skin Lab. ¿Nos cuentas en 30 segundos cómo te fue? Tu opinión la lee la Dra. directamente.\n\n${link}\n\nDra Katherin Almonte Skin Lab`,
+        html: `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#231F20;max-width:520px">
+          <p>Hola${nombre ? ' ' + escHtml(nombre) : ''}:</p>
+          <p>Gracias por venir a Skin Lab. ¿Nos cuentas en 30 segundos cómo te fue? Tu opinión la lee la Dra. directamente.</p>
+          <p style="margin:26px 0"><a href="${link}" style="background:#535E75;color:#fff;padding:13px 24px;border-radius:999px;text-decoration:none;font-weight:bold">Calificar mi cita</a></p>
+          <p style="color:#58595B;font-size:13px">Dra Katherin Almonte Skin Lab · Gazcue · Santo Domingo Norte</p></div>`
+      })
+    });
+    if (!r.ok) continue;       // se reintenta en la próxima vuelta del cron
+    await env.DB.prepare("UPDATE encuestas SET enviada_en = datetime('now'), enviada_por = 'correo' WHERE id = ?").bind(row.id).run();
+    enviadas++;
+  }
+  return enviadas;
+}
+const escHtml = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+
+/* ── Google Business Profile: leer y responder reseñas de Maps ──
+   Necesita OAuth de la cuenta que administra las fichas (una cuenta de
+   servicio no sirve: Google no deja agregarlas como administradoras).
+   Secrets: GBP_CLIENT_ID, GBP_CLIENT_SECRET, GBP_REFRESH_TOKEN, GBP_CUENTA,
+   GBP_LOC_GAZCUE, GBP_LOC_SDN — ver cabecera. */
+let gbpCache = { value: null, exp: 0 };
+const gbpListo = env => !!(env.GBP_CLIENT_ID && env.GBP_CLIENT_SECRET && env.GBP_REFRESH_TOKEN && env.GBP_CUENTA);
+const gbpCuenta = env => { const c = String(env.GBP_CUENTA || '').trim(); return c.startsWith('accounts/') ? c : 'accounts/' + c; };
+const gbpLocal = (env, k) => {
+  const l = String(env[SUCURSALES[k].gbp] || '').trim();
+  return !l ? '' : (l.startsWith('locations/') ? l : 'locations/' + l);
+};
+const ESTRELLAS_GBP = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
+
+async function gbpToken(env) {
+  if (gbpCache.value && Date.now() < gbpCache.exp) return gbpCache.value;
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: env.GBP_CLIENT_ID,
+      client_secret: env.GBP_CLIENT_SECRET,
+      refresh_token: env.GBP_REFRESH_TOKEN
+    })
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok || !d.access_token) {
+    throw new Error('Google Business Profile rechazó el acceso: ' + (d.error_description || d.error || res.status));
+  }
+  gbpCache = { value: d.access_token, exp: Date.now() + 50 * 60 * 1000 };
+  return d.access_token;
+}
+
+async function resenasGoogle(env) {
+  const token = await gbpToken(env);
+  const resenas = [], avisos = [];
+  for (const [k, v] of Object.entries(SUCURSALES)) {
+    const loc = gbpLocal(env, k);
+    if (!loc) { avisos.push(`${v.nombre}: falta ${v.gbp}.`); continue; }
+    let pageToken = '', vueltas = 0;
+    do {
+      const u = new URL(`https://mybusiness.googleapis.com/v4/${gbpCuenta(env)}/${loc}/reviews`);
+      u.searchParams.set('pageSize', '50');
+      u.searchParams.set('orderBy', 'updateTime desc');
+      if (pageToken) u.searchParams.set('pageToken', pageToken);
+      const r = await fetch(u, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { avisos.push(`${v.nombre}: ${(d.error && d.error.message) || r.status}`); break; }
+      for (const rv of d.reviews || []) {
+        resenas.push({
+          name: rv.name,
+          sucursal: v.nombre,
+          autor: (rv.reviewer && rv.reviewer.displayName) || 'Anónimo',
+          foto: (rv.reviewer && rv.reviewer.profilePhotoUrl) || '',
+          estrellas: ESTRELLAS_GBP[rv.starRating] || 0,
+          comentario: rv.comment || '',
+          fecha: rv.createTime || '',
+          respuesta: (rv.reviewReply && rv.reviewReply.comment) || '',
+          respuestaFecha: (rv.reviewReply && rv.reviewReply.updateTime) || ''
+        });
+      }
+      pageToken = d.nextPageToken || '';
+    } while (pageToken && ++vueltas < 4);   // hasta las 200 más recientes por sucursal
+  }
+  resenas.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  return { resenas, avisos };
+}
+
+/* Panel: clave correcta o respuesta de error lista para devolver. */
+async function rechazoPanel(b, request, env) {
+  if (!env.PANEL_CLAVE) return json({ ok: false, error: 'Falta el secret PANEL_CLAVE en Cloudflare.' }, 500, request, env);
+  if (!claveOk(String(b.clave || ''), env.PANEL_CLAVE)) {
+    await new Promise(r => setTimeout(r, 700));
+    return json({ ok: false, error: 'Clave incorrecta.' }, 401, request, env);
+  }
+  if (!env.DB) return json({ ok: false, error: 'Falta conectar la base de datos en Cloudflare.' }, 500, request, env);
+  return null;
 }
 
 /* ── CORS ── */
@@ -2374,11 +2632,186 @@ export default {
         return json({ ok: true }, 200, request, env);
       }
 
+      /* ── encuesta de satisfacción (pública, con enlace firmado) ── */
+      if (path === '/api/encuesta' && request.method === 'GET') {
+        const tk = await leerTokenCita(env, url.searchParams.get('t'), ENCUESTA_NS);
+        if (!tk || !env.DB) return json({ ok: false, error: 'Este enlace no es válido o ya venció.' }, 401, request, env);
+        await tablaEncuestas(env);
+        const row = await env.DB.prepare('SELECT * FROM encuestas WHERE cita_id = ?').bind(tk.id).first();
+        if (!row) return json({ ok: false, error: 'No encontramos esta encuesta.' }, 404, request, env);
+        return json({ ok: true, encuesta: vistaEncuesta(env, row) }, 200, request, env);
+      }
+
+      /* Se contesta una sola vez: lo que la Dra. lee en el panel no cambia por
+         debajo. Si la vuelven a abrir, ven su respuesta y el botón de Google. */
+      if (path === '/api/encuesta/responder' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        if (b.web) return json({ ok: true }, 200, request, env);   // trampa anti-bots
+        const tk = await leerTokenCita(env, b.t, ENCUESTA_NS);
+        if (!tk || !env.DB) return json({ ok: false, error: 'Este enlace no es válido o ya venció.' }, 401, request, env);
+        await tablaEncuestas(env);
+        const row = await env.DB.prepare('SELECT * FROM encuestas WHERE cita_id = ?').bind(tk.id).first();
+        if (!row) return json({ ok: false, error: 'No encontramos esta encuesta.' }, 404, request, env);
+        if (row.respondida_en) return json({ ok: true, encuesta: vistaEncuesta(env, row), yaEstaba: true }, 200, request, env);
+
+        const estrellas = parseInt(b.estrellas, 10);
+        if (!(estrellas >= 1 && estrellas <= 5)) return json({ ok: false, error: 'Elige de 1 a 5 estrellas.' }, 400, request, env);
+        const suc = claveSucursal(b.sucursal) || claveSucursal(row.sucursal);
+        const comentario = String(b.comentario || '').trim().slice(0, 2000);
+
+        await env.DB.prepare(`UPDATE encuestas SET estrellas = ?, comentario = ?, sucursal_resena = ?,
+            respondida_en = datetime('now') WHERE id = ? AND respondida_en IS NULL`)
+          .bind(estrellas, comentario, suc ? SUCURSALES[suc].nombre : (row.sucursal || ''), row.id).run();
+        const nueva = await env.DB.prepare('SELECT * FROM encuestas WHERE id = ?').bind(row.id).first();
+        return json({ ok: true, encuesta: vistaEncuesta(env, nueva) }, 200, request, env);
+      }
+
+      /* La paciente tocó "Publicar en Google". Solo se anota: si de verdad
+         la publicó lo dice Google, no nosotros. */
+      if (path === '/api/encuesta/google' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const tk = await leerTokenCita(env, b.t, ENCUESTA_NS);
+        if (!tk || !env.DB) return json({ ok: false }, 401, request, env);
+        await tablaEncuestas(env);
+        await env.DB.prepare("UPDATE encuestas SET google_click_en = COALESCE(google_click_en, datetime('now')) WHERE cita_id = ?")
+          .bind(tk.id).run();
+        return json({ ok: true }, 200, request, env);
+      }
+
+      /* ── panel oculto de opiniones ── */
+
+      /* Citas ya atendidas en las últimas dos semanas, cada una con su enlace
+         de encuesta, para mandarlo por WhatsApp desde el panel. */
+      if (path === '/api/encuestas/por-enviar' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const no = await rechazoPanel(b, request, env); if (no) return no;
+        const dias = Math.min(Math.max(nInt(b.dias, ENCUESTA_VENTANA), 1), 60);
+        const hoy = localNow().date;
+        const citas = await citasParaEncuesta(env, addDays(hoy, -dias), hoy);
+        await registrarEncuestas(env, citas);
+        const { results } = await env.DB.prepare(
+          'SELECT * FROM encuestas WHERE fecha_cita >= ? ORDER BY fecha_cita DESC, hora_cita DESC'
+        ).bind(addDays(hoy, -dias)).all();
+        const vivas = new Set(citas.map(c => String(c.id)));   // si la cita se borró, ya no se ofrece
+        const lista = [];
+        for (const r of results) {
+          if (!vivas.has(r.cita_id) && !r.respondida_en) continue;
+          lista.push({
+            id: r.id, cita_id: r.cita_id, nombre: r.nombre, telefono: r.telefono, correo: r.correo,
+            servicio: r.servicio, sucursal: r.sucursal, fecha: r.fecha_cita, hora: r.hora_cita,
+            origen: r.calendario === 'personal' ? 'Personal' : '',
+            enviada_en: r.enviada_en, enviada_por: r.enviada_por,
+            respondida_en: r.respondida_en, estrellas: r.estrellas,
+            token: await tokenEncuesta(env, r)
+          });
+        }
+        return json({ ok: true, encuestas: lista, correoAutomatico: !!(env.RESEND_API_KEY && env.ENCUESTA_REMITENTE) }, 200, request, env);
+      }
+
+      if (path === '/api/encuestas/marcar-enviada' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const no = await rechazoPanel(b, request, env); if (no) return no;
+        const id = parseInt(b.id, 10);
+        if (!id) return json({ ok: false, error: 'Falta el id.' }, 400, request, env);
+        await tablaEncuestas(env);
+        await env.DB.prepare("UPDATE encuestas SET enviada_en = datetime('now'), enviada_por = ? WHERE id = ?")
+          .bind(b.via === 'correo' ? 'correo' : 'whatsapp', id).run();
+        return json({ ok: true }, 200, request, env);
+      }
+
+      /* Todas las respuestas (último año) — el panel saca promedios y filtra. */
+      if (path === '/api/encuestas' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const no = await rechazoPanel(b, request, env); if (no) return no;
+        await tablaEncuestas(env);
+        const { results } = await env.DB.prepare(`
+          SELECT id, cita_id, nombre, telefono, correo, servicio, sucursal, sucursal_resena,
+                 fecha_cita, hora_cita, enviada_en, enviada_por, estrellas, comentario,
+                 respondida_en, google_click_en, atendida_en, respuesta, nota_interna
+          FROM encuestas
+          WHERE respondida_en IS NOT NULL AND respondida_en >= datetime('now', '-400 days')
+          ORDER BY respondida_en DESC
+          LIMIT 2000`).all();
+        const enviadas = await env.DB.prepare(
+          "SELECT COUNT(*) AS n FROM encuestas WHERE enviada_en IS NOT NULL AND enviada_en >= datetime('now', '-400 days')"
+        ).first();
+        return json({ ok: true, encuestas: results, enviadas: enviadas ? enviadas.n : 0 }, 200, request, env);
+      }
+
+      /* Marca una opinión como atendida y guarda qué se le respondió en
+         privado. También queda como nota de seguimiento en su historial. */
+      if (path === '/api/encuestas/atender' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const no = await rechazoPanel(b, request, env); if (no) return no;
+        const id = parseInt(b.id, 10);
+        if (!id) return json({ ok: false, error: 'Falta el id.' }, 400, request, env);
+        await tablaEncuestas(env);
+        const row = await env.DB.prepare('SELECT * FROM encuestas WHERE id = ?').bind(id).first();
+        if (!row) return json({ ok: false, error: 'No se encontró esa opinión.' }, 404, request, env);
+        const respuesta = String(b.respuesta || '').trim().slice(0, 2000);
+        const nota = String(b.nota || '').trim().slice(0, 2000);
+        const atendida = b.atendida !== false;
+        await env.DB.prepare(`UPDATE encuestas SET respuesta = ?, nota_interna = ?,
+            atendida_en = CASE WHEN ? THEN COALESCE(atendida_en, datetime('now')) ELSE NULL END WHERE id = ?`)
+          .bind(respuesta, nota, atendida ? 1 : 0, id).run();
+        if (atendida && !row.atendida_en) {
+          try {
+            const pid = await upsertPaciente(env, { nombre: row.nombre, telefono: row.telefono, correo: row.correo });
+            const texto = [`Encuesta: ${row.estrellas}★${row.comentario ? ' — "' + row.comentario + '"' : ''}`,
+              respuesta ? `Respuesta: ${respuesta}` : '', nota ? `Nota: ${nota}` : ''].filter(Boolean).join('\n');
+            await env.DB.prepare('INSERT INTO notas_seguimiento (paciente_id, cita_id, nota) VALUES (?, ?, ?)')
+              .bind(pid, row.cita_id, texto).run();
+          } catch (e) { /* la opinión ya quedó atendida; la nota es un extra */ }
+        }
+        return json({ ok: true }, 200, request, env);
+      }
+
+      /* Reseñas de Google Maps de las dos sucursales. */
+      if (path === '/api/resenas' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const no = await rechazoPanel(b, request, env); if (no) return no;
+        const enlaces = Object.fromEntries(Object.values(SUCURSALES).map(v => [v.nombre, googleResenaUrl(env, v.nombre)]));
+        if (!gbpListo(env)) return json({ ok: true, configurado: false, resenas: [], enlaces }, 200, request, env);
+        const { resenas, avisos } = await resenasGoogle(env);
+        return json({ ok: true, configurado: true, resenas, avisos, enlaces }, 200, request, env);
+      }
+
+      /* Publica (o cambia) la respuesta de la clínica a una reseña de Maps.
+         Sale pública, debajo de la reseña, con el nombre de la ficha. */
+      if (path === '/api/resenas/responder' && request.method === 'POST') {
+        const b = await request.json().catch(() => ({}));
+        const no = await rechazoPanel(b, request, env); if (no) return no;
+        if (!gbpListo(env)) return json({ ok: false, error: 'Falta conectar Google Business Profile (ver cabecera del Worker).' }, 500, request, env);
+        const name = String(b.name || '');
+        const propias = Object.keys(SUCURSALES).map(k => gbpLocal(env, k)).filter(Boolean)
+          .map(l => `${gbpCuenta(env)}/${l}/reviews/`);
+        if (!propias.some(p => name.startsWith(p)) || !/^[\w/-]+$/.test(name)) {
+          return json({ ok: false, error: 'Esa reseña no es de nuestras sucursales.' }, 400, request, env);
+        }
+        const texto = String(b.respuesta || '').trim();
+        if (!texto) return json({ ok: false, error: 'Escribe la respuesta.' }, 400, request, env);
+        if (texto.length > 4000) return json({ ok: false, error: 'La respuesta es muy larga (máximo 4.000 caracteres).' }, 400, request, env);
+        const r = await fetch(`https://mybusiness.googleapis.com/v4/${name}/reply`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${await gbpToken(env)}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ comment: texto })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) return json({ ok: false, error: 'Google no aceptó la respuesta: ' + ((d.error && d.error.message) || r.status) }, 502, request, env);
+        return json({ ok: true, respuesta: d.comment || texto, respuestaFecha: d.updateTime || '' }, 200, request, env);
+      }
+
       return json({ ok: false, error: 'Ruta no encontrada.' }, 404, request, env);
 
     } catch (e) {
       return json({ ok: false, error: e.message || 'Error interno.' }, 500, request, env);
     }
+  },
+
+  /* Cron (Worker → Settings → Triggers → Cron, p. ej. "0 * * * *"):
+     manda por correo las encuestas de las citas que acaban de terminar. */
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(enviarEncuestasPorCorreo(env).catch(() => 0));
   }
 };
 
