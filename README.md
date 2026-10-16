@@ -67,6 +67,29 @@ El sitio [`sitio-katherin`](https://github.com/Alveiro29/sitio-katherin):
 - `js/encuesta.js` → `/api/encuesta`, `/api/encuesta/responder`, `/api/encuesta/google`
 - `js/opiniones.js` (panel oculto `/opiniones`) → `/api/encuestas*`, `/api/resenas*`
 
+## Confirmar citas del calendario personal
+
+La cuenta de servicio solo puede **leer** el calendario personal de la
+Dra., así que la confirmación de esas citas no se guarda en el evento de
+Google (como las de "Citas web") sino en D1, en la columna
+`citas.confirmada_en` (fecha ISO, o `NULL` = pendiente). Esa columna se
+agregó a mano en `skinlab-db` el 16 oct 2026:
+
+    ALTER TABLE citas ADD COLUMN confirmada_en TEXT;
+
+`/api/citas/confirmar` con `calendario: 'personal'`:
+
+- Si la cita ya tiene fila en `citas`, solo cambia `confirmada_en`.
+- Si no, la liga a una paciente **sin modificarla**: por teléfono/correo,
+  luego por nombre exacto, luego por prefijo del título (la Dra. suele
+  escribir "Nombre Apellido Servicio"; el nombre debe tener al menos 2
+  palabras y gana el más largo). Si hay empate no adivina: crea una
+  paciente nueva y devuelve un `aviso`. La respuesta trae `paciente_id` y
+  `via` para poder verificarlo.
+
+`listarCitas` cruza las citas Personal con esa columna para devolver
+`confirmada`. Si D1 falla, el panel sale igual, solo sin esa marca.
+
 ## Encuestas y Google Maps
 
 Al terminar cada cita la paciente recibe un enlace a una encuesta de

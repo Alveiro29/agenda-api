@@ -148,6 +148,10 @@
                            fechas: es lo que usa el buscador del panel, que
                            busca a la paciente en todos los tiempos)
      POST /api/citas/nota  (panel interno · agrega una nota de seguimiento a una cita)
+     POST /api/citas/confirmar (panel interno · marca confirmada/pendiente. Citas web:
+                             en el evento (extendedProperties). Citas del calendario
+                             personal: en D1, columna citas.confirmada_en, porque ese
+                             calendario es de solo lectura para la cuenta de servicio)
      POST /api/citas/editar (panel interno · cambia servicio, sucursal, fecha/hora
                              y datos del paciente de una cita que aún no ha pasado)
      POST /api/citas/cancelar (panel interno · cancela una cita: queda en el
@@ -1058,8 +1062,67 @@ async function listarCitas(env, timeMin, timeMax) {
     }
   }
 
+  await confirmadasDeD1(env, filas);
   filas.sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
   return filas;
+}
+
+/* Las citas del calendario personal de la Dra. no se pueden marcar en el
+   evento (la cuenta de servicio solo lee ese calendario), así que su
+   confirmación vive en D1: columna citas.confirmada_en. Aquí se cruza.
+   Si D1 falla, el listado sigue saliendo igual (solo sin esa marca). */
+async function confirmadasDeD1(env, filas) {
+  if (!env.DB) return;
+  const ids = filas.filter(f => f.origen === 'Personal').map(f => String(f.id));
+  if (!ids.length) return;
+  try {
+    const conf = new Set();
+    for (let i = 0; i < ids.length; i += 90) {           // D1 admite ~100 parámetros por consulta
+      const lote = ids.slice(i, i + 90);
+      const { results } = await env.DB.prepare(
+        `SELECT cita_id FROM citas WHERE confirmada_en IS NOT NULL AND cita_id IN (${lote.map(() => '?').join(',')})`
+      ).bind(...lote).all();
+      (results || []).forEach(r => conf.add(String(r.cita_id)));
+    }
+    for (const f of filas) if (f.origen === 'Personal') f.confirmada = conf.has(String(f.id));
+  } catch (e) { /* sin D1 (o sin la columna nueva) no rompemos el panel */ }
+}
+
+/* Cita del calendario personal sin fila en D1: ¿a qué paciente ligarla?
+   NUNCA modifica la tabla pacientes. Orden: teléfono/correo → nombre exacto →
+   prefijo del título (nombre completo de la paciente + espacio, mín. 2
+   palabras, gana el más largo) → nueva. Si hay empate no adivina: lo anota
+   en "avisos" y pasa a crear una nueva. Compara en minúsculas y sin espacios
+   de más (los títulos suelen traer el servicio pegado: "Fulana Pérez Hyalift"). */
+const normNombre = v => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+async function pacienteParaCitaPersonal(env, { titulo, telefono, correo }) {
+  const avisos = [];
+  if (telefono) {
+    const r = await env.DB.prepare('SELECT id FROM pacientes WHERE telefono = ? LIMIT 1').bind(telefono).first();
+    if (r) return { id: r.id, via: 'telefono/correo', avisos };
+  }
+  if (correo) {
+    const r = await env.DB.prepare('SELECT id FROM pacientes WHERE lower(correo) = lower(?) LIMIT 1').bind(correo).first();
+    if (r) return { id: r.id, via: 'telefono/correo', avisos };
+  }
+  const t = normNombre(titulo);
+  if (!t) return { id: null, via: 'nueva', avisos };
+  const { results } = await env.DB.prepare("SELECT id, nombre FROM pacientes WHERE trim(coalesce(nombre, '')) != ''").all();
+  const filas = (results || []).map(p => ({ id: p.id, n: normNombre(p.nombre) }));
+  const exactas = filas.filter(p => p.n === t);
+  if (exactas.length === 1) return { id: exactas[0].id, via: 'nombre', avisos };
+  if (exactas.length > 1) {
+    avisos.push(`Hay ${exactas.length} pacientes llamadas "${titulo}" (ids ${exactas.map(p => p.id).join(', ')}): no se eligió ninguna.`);
+    return { id: null, via: 'nueva', avisos };
+  }
+  const pref = filas.filter(p => p.n.split(' ').length >= 2 && t.startsWith(p.n + ' '));
+  if (pref.length) {
+    const largo = Math.max(...pref.map(p => p.n.length));
+    const mejores = pref.filter(p => p.n.length === largo);
+    if (mejores.length === 1) return { id: mejores[0].id, via: 'prefijo', avisos };
+    avisos.push(`Empate por prefijo para "${titulo}" (ids ${mejores.map(p => p.id).join(', ')}): no se eligió ninguna.`);
+  }
+  return { id: null, via: 'nueva', avisos };
 }
 
 /* ── encuestas de satisfacción ────────────────────────────────────────
@@ -2180,6 +2243,58 @@ export default {
           return json({ ok: false, error: 'No se encontró esa cita: ' + ((ev.error && ev.error.message) || previa.status) }, 404, request, env);
         }
         if (ev.status === 'cancelled') return json({ ok: false, error: 'Esa cita está cancelada.' }, 409, request, env);
+
+        /* Calendario personal: solo lectura para la cuenta de servicio, así
+           que NO se toca el evento. La confirmación se guarda en D1 (columna
+           citas.confirmada_en), funcione o no la cita ya en la tabla. */
+        if (esPersonal) {
+          if (!env.DB) return json({ ok: false, error: 'Falta el binding DB (D1) para confirmar citas del calendario personal.' }, 500, request, env);
+          const desc = ev.description || '';
+          const t0 = ev.start && ev.start.dateTime ? new Date(ev.start.dateTime) : null;
+          const local = t0 ? new Date(t0.getTime() - 4 * 3600 * 1000).toISOString() : '';
+          const sucKey = claveSucursal(ev.location);
+          const s = v => String(v || '').trim();
+          const titulo = s(b.nombre) || campo(desc, 'Paciente') || s(ev.summary);
+          const telefono = s(b.telefono) || campo(desc, 'Tel[ée]fono');
+          const correo = s(b.email) || campo(desc, 'Correo');
+          const confirmadaEn = b.confirmada ? new Date().toISOString() : null;
+          let pid = null, via = '', avisos = [];
+          try {
+            const fila = await env.DB.prepare('SELECT paciente_id FROM citas WHERE cita_id = ?').bind(id).first();
+            if (fila) {
+              // ya está en la tabla: solo cambia confirmada_en (ni paciente, ni estado, ni origen)
+              pid = fila.paciente_id; via = 'existente-fila';
+              await env.DB.prepare('UPDATE citas SET confirmada_en = ? WHERE cita_id = ?').bind(confirmadaEn, id).run();
+            } else {
+              const m = await pacienteParaCitaPersonal(env, { titulo, telefono, correo });
+              pid = m.id; via = m.via; avisos = m.avisos;
+              if (!pid) {
+                const ins = await env.DB.prepare(
+                  'INSERT INTO pacientes (nombre, identificacion, telefono, correo, antecedentes) VALUES (?, ?, ?, ?, ?)'
+                ).bind(titulo, '', telefono, correo.toLowerCase(), '').run();
+                pid = ins.meta.last_row_id;
+              }
+              await env.DB.prepare(`
+                INSERT INTO citas (paciente_id, cita_id, fecha, hora, servicio, sucursal, estado, origen, confirmada_en)
+                VALUES (?, ?, ?, ?, ?, ?, 'Agendada', 'Personal', ?)
+                ON CONFLICT(cita_id) DO UPDATE SET confirmada_en = excluded.confirmada_en
+              `).bind(
+                pid, id,
+                s(b.fecha) || local.slice(0, 10),
+                s(b.hora) || local.slice(11, 16),
+                s(b.servicio) || campo(desc, 'Servicio') || '',
+                s(b.sucursal) || (sucKey ? SUCURSALES[sucKey].nombre : ''),
+                confirmadaEn
+              ).run();
+            }
+          } catch (e) {
+            const pista = /confirmada_en/i.test(String(e && e.message)) ? ' Falta correr el ALTER TABLE de la columna confirmada_en en D1.' : '';
+            return json({ ok: false, error: 'No se pudo guardar la confirmación en la base de datos: ' + (e && e.message || e) + pista }, 500, request, env);
+          }
+          const out = { ok: true, confirmada: b.confirmada, guardadoEn: 'D1', paciente_id: pid, via };
+          if (avisos.length) out.aviso = avisos.join(' ');
+          return json(out, 200, request, env);
+        }
 
         const priv = { ...((ev.extendedProperties && ev.extendedProperties.private) || {}) };
         priv.confirmada = b.confirmada ? '1' : '0';
