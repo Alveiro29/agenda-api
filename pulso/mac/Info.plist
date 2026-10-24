@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>es</string>
+  <key>CFBundleDisplayName</key><string>Pulso</string>
+  <key>CFBundleExecutable</key><string>Pulso</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleIdentifier</key><string>app.pulso.metricas</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>Pulso</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.business</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSHumanReadableCopyright</key><string>Métricas, metas y crecimiento para redes, anuncios y SEO.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <!-- El auditor SEO debe poder leer cualquier sitio, incluso los que aún no tienen HTTPS -->
+    <key>NSAllowsArbitraryLoads</key><true/>
+  </dict>
+</dict>
+</plist>

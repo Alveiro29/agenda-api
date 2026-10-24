@@ -24,3 +24,8 @@ El sitio [`sitio-katherin`](https://github.com/Alveiro29/sitio-katherin):
 - `js/citas.js` → `/api/citas`, `/api/citas/nota`, `/api/citas/editar`, `/api/citas/cancelar`,
   `/api/bloqueos`, `/api/bloqueos/crear`, `/api/bloqueos/borrar`
 - `js/consent.js` → `/api/consentimientos*`, `/api/pacientes*`
+
+## También en este repo
+
+- [`pulso/`](pulso/README.md) — **Pulso**, app de Mac para seguir métricas de redes, Meta Ads y SEO,
+  con metas ancladas a presupuesto publicitario. No tiene relación con el Worker.

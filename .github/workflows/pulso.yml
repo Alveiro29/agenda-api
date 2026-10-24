@@ -1,0 +1,37 @@
+name: Pulso (app de Mac)
+
+on:
+  push:
+    paths: ['pulso/**', '.github/workflows/pulso.yml']
+  pull_request:
+    paths: ['pulso/**', '.github/workflows/pulso.yml']
+  workflow_dispatch:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pruebas de lógica
+        run: node --test pulso/tests/unit.test.js
+      - name: Recorrido de la interfaz (Chromium)
+        run: |
+          npm install --no-save playwright@1.48.2
+          npx playwright install --with-deps chromium
+          node pulso/tests/e2e.js
+
+  app-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar Pulso.app (universal)
+        run: pulso/build-app.sh
+      - name: Empaquetar
+        run: cd pulso/build && ditto -c -k --keepParent Pulso.app Pulso-mac.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pulso-mac
+          path: pulso/build/Pulso-mac.zip

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pulso</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M2 13h4l2.5-6 4 11 3-8 1.5 3H22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <div><b>Pulso</b><small>Métricas y crecimiento</small></div>
+      </div>
+      <nav id="nav" aria-label="Secciones"></nav>
+      <div class="sidebar-foot">
+        <label class="muted small" for="person">Viendo como</label>
+        <select id="person"></select>
+        <div id="sync-status" class="muted small"></div>
+      </div>
+    </aside>
+    <main>
+      <header class="toolbar">
+        <div class="toolbar-title"><h1 id="title">Resumen</h1><span id="subtitle" class="muted"></span></div>
+        <div class="toolbar-actions" id="toolbar-actions"></div>
+      </header>
+      <section id="view" tabindex="-1"></section>
+    </main>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/metrics.js"></script>
+  <script src="js/analysis.js"></script>
+  <script src="js/connectors.js"></script>
+  <script src="js/seo.js"></script>
+  <script src="js/platform.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/demo.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
