@@ -805,7 +805,7 @@
         <div class="small" style="word-break:break-all"><b>Ubicación:</b> ${esc(loc.path || '')}</div>
         <div class="row end" style="margin-top:10px">${P.native ? '<button class="btn" data-act="choose-folder">Elegir carpeta…</button>' : ''}<button class="btn" data-act="reload">Recargar ahora</button></div></div>
       <div class="card"><h2>Meta (Instagram, Facebook y Ads)</h2>
-        <ol class="steps small"><li>Entra a <a href="#" data-act="open-url" data-url="https://developers.facebook.com/apps">developers.facebook.com/apps</a> y crea una app tipo <b>Empresa</b>.</li>
+        <ol class="steps small"><li>Entra a <a href="#" data-act="open-url" data-url="https://developers.facebook.com/apps">developers.facebook.com/apps</a> y pulsa <b>Crear app</b>. Caso de uso: <b>Otro</b> → tipo de app: <b>Empresa</b> (si te pide un portafolio comercial, puedes omitirlo).</li>
           <li>Abre el <a href="#" data-act="open-url" data-url="https://developers.facebook.com/tools/explorer/">Graph API Explorer</a>, elige tu app y agrega permisos: <code>pages_show_list, pages_read_engagement, read_insights, instagram_basic, instagram_manage_insights, ads_read, business_management</code>.</li>
           <li>Genera el token y extiéndelo a 60 días en el <a href="#" data-act="open-url" data-url="https://developers.facebook.com/tools/debug/accesstoken/">Depurador de tokens</a> → "Extender". Para que no venza nunca: Business Manager → Usuarios del sistema → Generar token.</li></ol>
         <label class="field" style="margin-top:8px">Token de acceso <span class="hint">se guarda en el Llavero de esta Mac, no en el archivo compartido</span><input id="meta-token" type="password" value="${esc(metaTok)}" placeholder="EAAB…"></label>
