@@ -272,7 +272,8 @@
   // ── Contenido ───────────────────────────────────────────────
   function postER(p) {
     const e = p.engagements != null ? p.engagements : (p.likes || 0) + (p.comments || 0) + (p.shares || 0) + (p.saves || 0);
-    const base = p.reach || p.views || p.impressions;
+    // Sin alcance (cuentas medidas desde afuera) se usa la base de seguidores
+    const base = p.reach || (p.followers ? p.followers : p.views || p.impressions);
     return base ? e / base : null;
   }
 
@@ -348,6 +349,16 @@
       if (d.searchImpressions != null && d.searchImpressions > 0.15)
         add('bien', 'Google te está mostrando más', `Las impresiones crecieron ${pct(d.searchImpressions, 0)}.`, ['Optimiza títulos de las páginas que más crecieron para convertir esas impresiones en clics.'], 'searchImpressions');
       return out;
+    }
+
+    // Cuentas medidas desde afuera (sin iniciar sesión)
+    if (account.source === 'public') {
+      if (c.erFollowers != null && g('erFollowers')?.level === 'low')
+        add('media', 'Interacción baja para su tamaño', `Cada publicación recibe en promedio ${pct(c.erFollowers, 2)} de sus seguidores en me gusta y comentarios.`,
+          ['Compara contra los competidores en la Comparativa: si todos están bajos, es el sector; si solo esta cuenta, es el contenido.', 'Revisa en Contenido qué formato y qué día rinden mejor.'], 'erFollowers');
+      add('baja', 'Medida con datos públicos', 'Sin iniciar sesión solo se ven seguidores, publicaciones, me gusta y comentarios. Alcance, impresiones, guardados y visitas al perfil solo los ve quien administra la cuenta.',
+        [account.role === 'competidor' ? 'Mídela a diario (Pulso lo hace solo al abrirse) para ver su ritmo de crecimiento y publicación.'
+          : 'Para el análisis completo: en la computadora donde está abierta la sesión, exporta Meta Business Suite → Estadísticas → Exportar datos (o TikTok Studio → Descargar datos) e impórtalo en Datos e importación.']);
     }
 
     // Redes orgánicas

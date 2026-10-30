@@ -39,6 +39,16 @@ const assert = require('node:assert/strict');
   await page.waitForTimeout(200);
   assert.ok(await page.locator('td', { hasText: '2030-01-01' }).count() > 0, 'la fila importada aparece');
 
+  // Comparativa y alta de una cuenta pública (sin red: solo el formulario)
+  await page.click('[data-nav=comparativa]');
+  await page.waitForTimeout(150);
+  assert.ok(await page.locator('text=Competidor A · Instagram').count() > 0);
+  await page.click('[data-act=add-competitor]');
+  assert.equal(await page.locator('[name=source]').inputValue(), 'public');
+  await page.selectOption('[name=platform]', 'facebook');
+  assert.equal(await page.locator('[name=source]').isDisabled(), true, 'Facebook no tiene medición pública');
+  await page.keyboard.press('Escape');
+
   // Planificador
   await page.click('[data-nav=estratega]');
   await page.click('[data-act=plan]');

@@ -305,6 +305,15 @@
       syncInstagram: (igId, days, progress) => syncInstagram(get, all, igId, days, progress),
       syncPage: (pageId, pageToken, days, progress) => syncPage(get, all, pageId, pageToken, days, progress),
       syncAds: (actId, days, progress) => syncAds(get, all, actId, days, progress),
+      /* Business Discovery: datos públicos de CUALQUIER cuenta profesional de
+         Instagram, consultados desde tu propia cuenta ("lupa"). Es la vía
+         oficial de Meta para medir competidores sin iniciar sesión en ellos. */
+      discoverInstagram(lupaIgId, username) {
+        const u = String(username).replace(/^@/, '').trim();
+        const media = 'media.limit(50){id,caption,like_count,comments_count,timestamp,media_type,media_product_type,permalink}';
+        return get(`/${lupaIgId}`, { fields: `business_discovery.username(${u}){username,name,followers_count,follows_count,media_count,${media}}` })
+          .then(r => r.business_discovery);
+      },
     };
   }
 
@@ -497,7 +506,95 @@
     return { rows, campaigns };
   }
 
-  const api = { parseCSV, parseNumber, parseDate, detectDayFirst, mapHeaders, importCSV, adaptRows, MetaClient, actionSum, HEADER_MAP };
+  // ── Medición pública (sin iniciar sesión) ───────────────────
+  /* Lo que cualquiera puede ver de un perfil: seguidores, publicaciones y
+     me gusta/comentarios de cada post. NO incluye alcance, impresiones,
+     guardados ni visitas: eso solo lo ve quien administra la cuenta.
+     Cada medición deja una "foto" del día; con varios días se arma la
+     curva de crecimiento. */
+
+  /* Normaliza Business Discovery (oficial) o el JSON web de Instagram
+     (respaldo no oficial) a { username, followers, mediaCount, posts[] } */
+  function normalizeInstagramPublic(src) {
+    if (!src) return null;
+    if (src.followers_count != null) {
+      return {
+        username: src.username, name: src.name, followers: src.followers_count, mediaCount: src.media_count, official: true,
+        posts: ((src.media && src.media.data) || []).map(m => ({
+          id: m.id, date: (m.timestamp || '').slice(0, 10), time: (m.timestamp || '').slice(11, 16), type: mediaType(m),
+          caption: (m.caption || '').slice(0, 140), permalink: m.permalink, likes: m.like_count, comments: m.comments_count,
+        })),
+      };
+    }
+    const u = (src.data && src.data.user) || src.user;
+    if (!u || !u.edge_followed_by) return null;
+    const edges = (u.edge_owner_to_timeline_media && u.edge_owner_to_timeline_media.edges) || [];
+    return {
+      username: u.username, name: u.full_name, followers: u.edge_followed_by.count,
+      mediaCount: u.edge_owner_to_timeline_media && u.edge_owner_to_timeline_media.count, official: false,
+      posts: edges.map(({ node: n }) => {
+        const d = new Date((n.taken_at_timestamp || 0) * 1000);
+        return {
+          id: n.id, date: isoOf(d), time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
+          type: n.product_type === 'clips' ? 'Reel' : n.__typename === 'GraphSidecar' ? 'Carrusel' : n.is_video ? 'Video' : 'Imagen',
+          caption: (((n.edge_media_to_caption || {}).edges || [])[0] || { node: { text: '' } }).node.text.slice(0, 140),
+          permalink: n.shortcode ? `https://www.instagram.com/p/${n.shortcode}/` : null,
+          likes: (n.edge_liked_by || n.edge_media_preview_like || {}).count, comments: (n.edge_media_to_comment || {}).count,
+          views: n.video_view_count || undefined,
+        };
+      }),
+    };
+  }
+
+  /* Convierte una medición de Instagram en filas diarias y posts.
+     - Hoy: seguidores (saldo) y total de publicaciones.
+     - Día de cada post: cuántos posts, me gusta y comentarios acumulados
+       (se actualizan en cada medición, porque siguen sumando). */
+  function instagramPublicToData(pub, today) {
+    const rows = {};
+    const row = d => rows[d] || (rows[d] = { date: d });
+    row(today).followers = pub.followers;
+    if (pub.mediaCount != null) row(today).mediaCount = pub.mediaCount;
+    const byDay = {};
+    for (const p of pub.posts) {
+      if (!p.date) continue;
+      const g = byDay[p.date] || (byDay[p.date] = { posts: 0, likes: 0, comments: 0 });
+      g.posts++; g.likes += p.likes || 0; g.comments += p.comments || 0;
+    }
+    for (const [d, g] of Object.entries(byDay)) Object.assign(row(d), g, { engagements: g.likes + g.comments });
+    const posts = pub.posts.map(p => Object.assign({}, p, { followers: pub.followers, engagements: (p.likes || 0) + (p.comments || 0) }));
+    return { rows: Object.values(rows).sort((a, b) => a.date.localeCompare(b.date)), posts };
+  }
+
+  /* TikTok: el perfil público trae un JSON con los contadores */
+  function parseTikTokProfile(html) {
+    const m = String(html || '').match(/<script[^>]+id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+    if (!m) return null;
+    let j; try { j = JSON.parse(m[1]); } catch (e) { return null; }
+    const d = j && j.__DEFAULT_SCOPE__ && j.__DEFAULT_SCOPE__['webapp.user-detail'];
+    const info = d && d.userInfo;
+    if (!info || !info.stats) return null;
+    const st = info.statsV2 || info.stats;
+    const n = v => (v == null ? null : Number(v));
+    return { username: info.user && info.user.uniqueId, name: info.user && info.user.nickname,
+             followers: n(st.followerCount), hearts: n(st.heartCount ?? st.heart), videos: n(st.videoCount) };
+  }
+
+  /* TikTok solo da totales: la diferencia con la medición anterior son
+     los me gusta y videos nuevos de ese intervalo. */
+  function tiktokPublicToRows(stats, prevRows, today) {
+    const before = [...(prevRows || [])].filter(r => r.date < today && r.heartTotal != null).sort((a, b) => a.date.localeCompare(b.date)).pop();
+    const row = { date: today, followers: stats.followers, heartTotal: stats.hearts, videoTotal: stats.videos };
+    if (before) {
+      const dl = stats.hearts - before.heartTotal, dv = stats.videos - before.videoTotal;
+      if (dl >= 0) { row.likes = dl; row.engagements = dl; }
+      if (dv >= 0) row.posts = dv;
+    }
+    return [row];
+  }
+
+  const api = { parseCSV, parseNumber, parseDate, detectDayFirst, mapHeaders, importCSV, adaptRows, MetaClient, actionSum, HEADER_MAP,
+                normalizeInstagramPublic, instagramPublicToData, parseTikTokProfile, tiktokPublicToRows };
   root.PulsoConnectors = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

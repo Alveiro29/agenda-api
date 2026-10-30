@@ -45,6 +45,9 @@
     searchClicks:   { label: 'Clics orgánicos (Google)', agg: 'sum' },
     searchImpressions: { label: 'Impresiones en Google', agg: 'sum' },
     positionSum:    { label: 'Posición (suma ponderada)', agg: 'sum', hidden: true },
+    mediaCount:     { label: 'Publicaciones totales', agg: 'last', hidden: true },
+    heartTotal:     { label: 'Me gusta totales (TikTok)', agg: 'last', hidden: true },
+    videoTotal:     { label: 'Videos totales (TikTok)', agg: 'last', hidden: true },
   };
 
   const div = (a, b) => (b && isFinite(a) && isFinite(b) ? a / b : null);

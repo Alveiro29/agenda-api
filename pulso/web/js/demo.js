@@ -32,6 +32,8 @@
       { id: 'demo_ads', name: 'Meta Ads · Captación', platform: 'meta_ads', handle: 'act_000000', owner: p1 },
       { id: 'demo_web', name: 'marca.com.do', platform: 'web', handle: 'https://example.com', owner: p2 },
       { id: 'demo_in', name: 'José · LinkedIn', platform: 'linkedin', handle: 'in/jose', owner: p1, personal: true },
+      { id: 'demo_comp1', name: 'Competidor A · Instagram', platform: 'instagram', handle: '@competidor.a', owner: p1, role: 'competidor', source: 'public' },
+      { id: 'demo_comp2', name: 'Competidor B · Instagram', platform: 'instagram', handle: '@competidor.b', owner: p1, role: 'competidor', source: 'public' },
     ].map((a, i) => Object.assign(a, { createdAt: now + i, updatedAt: now, demo: true }));
 
     const series = {}, posts = {}, campaigns = {};
@@ -80,6 +82,18 @@
     social('demo_fb', { platform: 'facebook', followers: 42100, reach: 3900, trend: -0.25, er: 0.012, f1k: 0.9, postProb: 0.4, viewsX: 1.6, pvr: 0.006, bio: 0.08, sh: 0.12, sv: 0.02 });
     social('demo_tt', { platform: 'tiktok', followers: 6100, reach: 9800, trend: 0.9, er: 0.071, f1k: 3.9, postProb: 0.45, viewsX: 1.25, pvr: 0.021, bio: 0.02, sh: 0.1, sv: 0.07, video: 0.09, watch: 4.1 });
     social('demo_in', { platform: 'linkedin', followers: 2350, reach: 620, trend: 0.5, er: 0.041, f1k: 4.4, postProb: 0.3, viewsX: 1, pvr: 0.02, bio: 0.03, sh: 0.06, sv: 0.01, impressionsX: 1.6 });
+
+    // Competidores: solo lo que se ve desde afuera (seguidores, posts, me gusta, comentarios)
+    social('demo_comp1', { platform: 'instagram', followers: 31200, reach: 7000, trend: 0.15, er: 0.025, f1k: 1.6, postProb: 0.7, viewsX: 2, pvr: 0.01, bio: 0.03, sh: 0.05, sv: 0.08 });
+    social('demo_comp2', { platform: 'instagram', followers: 12800, reach: 4200, trend: 0.6, er: 0.055, f1k: 3.2, postProb: 0.5, viewsX: 2, pvr: 0.02, bio: 0.03, sh: 0.09, sv: 0.12 });
+    for (const id of ['demo_comp1', 'demo_comp2']) {
+      const fol = Object.fromEntries(series[id].map(r => [r.date, r.followers]));
+      posts[id] = posts[id].map(p => ({ id: p.id, date: p.date, time: p.time, type: p.type, caption: p.caption, likes: p.likes, comments: p.comments,
+        engagements: p.likes + p.comments, followers: fol[p.date], updatedAt: p.updatedAt }));
+      const byDay = {};
+      for (const p of posts[id]) { const g = byDay[p.date] || (byDay[p.date] = { posts: 0, likes: 0, comments: 0 }); g.posts++; g.likes += p.likes; g.comments += p.comments; }
+      series[id] = series[id].map(r => Object.assign({ date: r.date, followers: r.followers }, byDay[r.date] ? Object.assign({}, byDay[r.date], { engagements: byDay[r.date].likes + byDay[r.date].comments }) : {}));
+    }
 
     // Anuncios: la frecuencia sube al final (fatiga) y el CTR cae un poco
     series.demo_ads = dates.map((d, i) => {

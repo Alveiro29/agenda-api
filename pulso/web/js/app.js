@@ -76,6 +76,8 @@
   document.addEventListener('mousedown', e => { if (popEl && !popEl.contains(e.target) && !e.target.closest('.info-btn')) { popEl.remove(); popEl = null; } });
 
   const visibleAccounts = () => S.state.accounts.filter(a => ui.person === 'Todos' || a.owner === ui.person);
+  const ownAccounts = () => visibleAccounts().filter(a => a.role !== 'competidor');
+  const canMeasure = a => a.source === 'public' || (a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId));
   const adsRows = () => { const a = S.state.accounts.find(x => x.platform === 'meta_ads'); return a ? S.rows(a.id) : []; };
   const isSocial = p => ['instagram', 'facebook', 'tiktok', 'linkedin'].includes(p);
   const metaClient = async () => {
@@ -86,14 +88,17 @@
 
   // ── Navegación ──────────────────────────────────────────────
   const NAV = [
-    ['resumen', 'Resumen', '◎'], ['metas', 'Metas', '◉'], ['estratega', 'Estratega', '✦'], ['seo', 'SEO', '⌕'], ['academia', 'Academia de métricas', '✎'],
+    ['resumen', 'Resumen', '◎'], ['metas', 'Metas', '◉'], ['comparativa', 'Comparativa', '⇄'], ['estratega', 'Estratega', '✦'], ['seo', 'SEO', '⌕'], ['academia', 'Academia de métricas', '✎'],
   ];
   function renderNav() {
     const accs = visibleAccounts();
+    const item = a => `<button class="nav-item ${ui.view === 'cuenta' && ui.accountId === a.id ? 'active' : ''}" data-account="${a.id}" title="${a.source === 'public' ? 'Medida con datos públicos' : ''}"><span class="dot" style="background:${plat(a.platform).color}"></span><span class="grow">${esc(a.name)}</span>${a.source === 'public' ? '<span class="ico small" aria-label="pública">◌</span>' : ''}</button>`;
+    const comps = accs.filter(a => a.role === 'competidor');
     $('#nav').innerHTML = NAV.map(([k, label, ico]) => `<button class="nav-item ${ui.view === k ? 'active' : ''}" data-nav="${k}"><span class="ico">${ico}</span><span class="grow">${esc(label)}</span></button>`).join('')
       + `<div class="nav-sec">Cuentas</div>`
-      + accs.map(a => `<button class="nav-item ${ui.view === 'cuenta' && ui.accountId === a.id ? 'active' : ''}" data-account="${a.id}"><span class="dot" style="background:${plat(a.platform).color}"></span><span class="grow">${esc(a.name)}</span></button>`).join('')
+      + accs.filter(a => a.role !== 'competidor').map(item).join('')
       + `<button class="nav-item" data-act="add-account"><span class="ico">＋</span><span class="grow">Agregar cuenta</span></button>`
+      + (comps.length ? `<div class="nav-sec">Competidores</div>` + comps.map(item).join('') : '')
       + `<div class="nav-sec"></div><button class="nav-item ${ui.view === 'ajustes' ? 'active' : ''}" data-nav="ajustes"><span class="ico">⚙</span><span class="grow">Ajustes</span></button>`;
     const sel = $('#person');
     const opts = ['Todos', ...S.state.people];
@@ -136,7 +141,7 @@
     renderNav();
     const v = $('#view');
     try {
-      ({ resumen: viewResumen, cuenta: viewCuenta, metas: viewMetas, estratega: viewEstratega, seo: viewSEO, academia: viewAcademia, ajustes: viewAjustes }[ui.view] || viewResumen)(v);
+      ({ resumen: viewResumen, cuenta: viewCuenta, metas: viewMetas, comparativa: viewComparativa, estratega: viewEstratega, seo: viewSEO, academia: viewAcademia, ajustes: viewAjustes }[ui.view] || viewResumen)(v);
     } catch (err) {
       console.error(err);
       v.innerHTML = `<div class="empty"><h2>Algo falló al dibujar esta vista</h2><p>${esc(err.message)}</p></div>`;
@@ -145,10 +150,10 @@
 
   // ── Resumen ─────────────────────────────────────────────────
   function viewResumen(v) {
-    const accs = visibleAccounts();
-    const metaLinked = accs.some(a => a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId));
+    const accs = ownAccounts();
+    const metaLinked = accs.some(canMeasure);
     setHeader('Resumen', ui.person === 'Todos' ? 'Todas las cuentas' : `Cuentas de ${ui.person}`,
-      periodSeg() + (metaLinked ? `<button class="btn" data-act="sync-all">↻ Sincronizar Meta</button>` : ''));
+      periodSeg() + (metaLinked ? `<button class="btn" data-act="sync-all">↻ Actualizar todo</button>` : ''));
     if (!accs.length) {
       v.innerHTML = `<div class="empty"><h2>Empecemos</h2><p>Agrega tus cuentas (Instagram, Facebook, TikTok, Meta Ads, LinkedIn y tu sitio web) o explora la app con datos de ejemplo.</p>
         <div class="row" style="justify-content:center;margin-top:14px"><button class="btn primary" data-act="add-account">Agregar cuenta</button><button class="btn" data-act="demo-load">Ver con datos de demostración</button><button class="btn" data-act="go-settings">Conectar Meta</button></div></div>`;
@@ -192,18 +197,19 @@
       </div>`;
   }
 
-  function primaryKeys(p) {
+  function primaryKeys(p, pub) {
     if (p === 'meta_ads') return ['spend', 'leads', 'cpl'];
     if (p === 'web') return ['searchClicks', 'searchImpressions', 'avgPosition'];
+    if (pub) return ['followers', 'netFollowers', 'erFollowers'];
     return ['followers', 'reach', 'erReach'];
   }
   function accountCard(a, c) {
-    const keys = primaryKeys(a.platform);
-    const sparkKey = a.platform === 'meta_ads' ? 'leads' : a.platform === 'web' ? 'searchClicks' : 'reach';
+    const keys = primaryKeys(a.platform, a.source === 'public');
+    const sparkKey = a.platform === 'meta_ads' ? 'leads' : a.platform === 'web' ? 'searchClicks' : a.source === 'public' ? 'followers' : 'reach';
     const ser = A.dailySeries(S.rows(a.id), a.platform, sparkKey, c.from, c.to).map(p => ({ y: p.value }));
     const diag = A.diagnose(a, S.rows(a.id), S.state.posts[a.id], ui.period)[0];
     return `<div class="card acc-card" data-act="open-account" data-id="${a.id}" tabindex="0">
-      <div class="acc-head">${platBadge(a.platform)}<span class="name">${esc(a.name)}</span><span class="muted small">${esc(a.owner || '')}</span></div>
+      <div class="acc-head">${platBadge(a.platform)}<span class="name">${esc(a.name)}</span>${a.source === 'public' ? '<span class="badge" title="Medida sin iniciar sesión">pública</span>' : ''}<span class="muted small">${esc(a.owner || '')}</span></div>
       <div class="acc-stats">${keys.map(k => `<div><b>${fmtM(k, c.current[k])}</b><small>${esc(M.byKey[k].label)}</small><div class="small">${deltaHtml(k, c.delta[k])}</div></div>`).join('')}</div>
       <div class="acc-foot">${CH.spark(ser, { color: plat(a.platform).color })}${diag ? `<span class="badge ${diag.severity}" title="${esc(diag.detail)}">${esc(diag.title)}</span>` : ''}</div>
     </div>`;
@@ -212,6 +218,49 @@
     const sevLabel = { alta: 'Prioridad alta', media: 'Media', baja: 'Oportunidad', bien: 'Bien' }[d.severity];
     return `<div class="insight ${d.severity}"><h4><span class="badge ${d.severity}">${sevLabel}</span>${esc(d.title)}${d.metric ? ` <button class="info-btn" data-info="${d.metric}" aria-label="Sobre la métrica">ⓘ</button>` : ''}</h4>
       <p>${ui.view !== 'cuenta' ? `<b>${esc(d.account)}:</b> ` : ''}${esc(d.detail)}</p><ul>${d.actions.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+  }
+
+  // ── Comparativa ─────────────────────────────────────────────
+  /* Solo usa lo que es público para TODAS las cuentas (seguidores,
+     publicaciones, me gusta y comentarios), para que sea justa entre
+     las tuyas con acceso completo y las medidas desde afuera. */
+  function viewComparativa(v) {
+    setHeader('Comparativa', 'Tus cuentas frente a la competencia, con métricas públicas comparables',
+      periodSeg() + `<button class="btn" data-act="measure-all">↻ Medir públicas</button><button class="btn primary" data-act="add-competitor">＋ Competidor</button>`);
+    const accs = visibleAccounts().filter(a => isSocial(a.platform));
+    let head = '';
+    if (!accs.some(a => a.role === 'competidor')) {
+      head = `<div class="empty"><h2>Agrega competidores</h2><p>Escribe el @usuario de Instagram o TikTok de cada competidor. Pulso los mide sin iniciar sesión, toma una foto diaria y los compara contra tus cuentas: crecimiento, ritmo de publicación e interacción por post.</p>
+        <button class="btn primary" data-act="add-competitor">＋ Agregar competidor</button></div>`;
+      if (!accs.length) { v.innerHTML = head; return; }
+    }
+    const rowsFor = a => {
+      const c = A.comparePeriods(S.rows(a.id), a.platform, ui.period);
+      const t = c.t;
+      const posts = t.sum.posts || 0;
+      const inter = (t.sum.likes || 0) + (t.sum.comments || 0);
+      const perPost = posts ? inter / posts : null;
+      const measures = S.rows(a.id).filter(r => r.followers != null).length;
+      return { a, followers: c.current.followers, net: c.current.netFollowers, growth: c.current.growthRate, ppw: c.current.postsPerWeek,
+               perPost, er: perPost != null && t.avg.followers ? perPost / t.avg.followers : null, measures };
+    };
+    const byPlat = {};
+    for (const a of accs) (byPlat[a.platform] = byPlat[a.platform] || []).push(rowsFor(a));
+    const best = (list, k) => Math.max(...list.map(x => (x[k] == null ? -Infinity : x[k])));
+    const cell = (list, x, k, txt) => `<td class="r">${x[k] === best(list, k) && x[k] != null && list.length > 1 ? `<b>${txt}</b> ★` : txt}</td>`;
+    const adLib = name => `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=DO&search_type=keyword_unordered&q=${encodeURIComponent(name.replace(/·.*$/, '').replace(/^@/, '').trim())}`;
+    v.innerHTML = head + Object.entries(byPlat).map(([p, list]) => {
+      list.sort((x, y) => (y.followers || 0) - (x.followers || 0));
+      return `<div class="card section"><div class="section-h"><h2>${platBadge(p)} ${esc(plat(p).label)}</h2><span class="muted small">últimos ${ui.period} días · ★ mejor del grupo</span></div>
+        <div class="table-wrap"><table><thead><tr><th>Cuenta</th><th class="r">Seguidores</th><th class="r">Crecimiento neto</th><th class="r">Tasa de crecimiento <button class="info-btn" data-info="growthRate">ⓘ</button></th>
+          <th class="r">Posts/semana <button class="info-btn" data-info="postsPerWeek">ⓘ</button></th><th class="r">Interacciones por post</th><th class="r">Interacción por post <button class="info-btn" data-info="erFollowers">ⓘ</button></th><th></th></tr></thead><tbody>
+        ${list.map(x => `<tr><td><a href="#" data-act="open-account" data-id="${x.a.id}"><b>${esc(x.a.name)}</b></a> <span class="badge ${x.a.role === 'competidor' ? 'warn' : 'pass'}">${x.a.role === 'competidor' ? 'competidor' : 'propia'}</span>${x.measures < 2 && x.a.source === 'public' ? ' <span class="muted small" title="Hacen falta al menos 2 mediciones en días distintos">· 1 medición</span>' : ''}</td>
+          <td class="r">${M.compact(x.followers ?? 0)}</td>${cell(list, x, 'net', x.net == null ? '—' : (x.net > 0 ? '+' : '') + M.compact(x.net))}${cell(list, x, 'growth', M.format(x.growth, 'pct', { decimals: 2 }))}
+          ${cell(list, x, 'ppw', x.ppw == null ? '—' : x.ppw.toFixed(1))}${cell(list, x, 'perPost', x.perPost == null ? '—' : M.compact(Math.round(x.perPost)))}${cell(list, x, 'er', M.format(x.er, 'pct', { decimals: 2 }))}
+          <td class="r">${p === 'instagram' || p === 'facebook' ? `<a href="#" data-act="open-url" data-url="${esc(adLib(x.a.name))}" title="Biblioteca de anuncios de Meta: qué anuncios tiene activos">Anuncios activos ↗</a>` : ''}</td></tr>`).join('')}</tbody></table></div>
+        ${list.filter(x => x.er != null).length > 1 ? `<h3 style="margin:14px 0 8px">Interacción por post (me gusta + comentarios ÷ seguidores)</h3>${CH.bars(list.filter(x => x.er != null).sort((a, b) => b.er - a.er).map(x => ({ label: x.a.name, value: x.er, color: x.a.role === 'competidor' ? 'var(--series-prev)' : 'var(--series-1)' })), { unit: 'pct', decimals: 2 })}` : ''}
+      </div>`;
+    }).join('') + `<p class="muted small">Para comparar de forma justa se usa solo lo que es público para todos: seguidores, publicaciones, me gusta y comentarios (en TikTok, me gusta). El crecimiento se arma con las fotos diarias: abre Pulso a diario o pulsa "Medir públicas". "Anuncios activos" abre la Biblioteca de anuncios de Meta, pública y sin iniciar sesión.</p>`;
   }
 
   // ── Metas ───────────────────────────────────────────────────
@@ -228,7 +277,7 @@
   }
   function viewMetas(v) {
     setHeader('Metas', 'Visibilidad, clics, leads y crecimiento — ancladas a presupuesto', `<button class="btn primary" data-act="new-goal">＋ Nueva meta</button>`);
-    const accs = visibleAccounts();
+    const accs = ownAccounts();
     const goals = S.state.goals.filter(g => accs.some(a => a.id === g.accountId));
     if (!goals.length) {
       v.innerHTML = `<div class="empty"><h2>Sin metas todavía</h2><p>Define qué quieres lograr (ej. 1.500 leads en 60 días, 25K seguidores, +40% de alcance) y Pulso te dirá si vas en ruta, a qué ritmo y cuánto presupuesto haría falta para cerrar la brecha.</p><button class="btn primary" data-act="new-goal">Crear la primera meta</button></div>`;
@@ -266,7 +315,7 @@
   }
 
   function goalModal(existing) {
-    const accs = visibleAccounts();
+    const accs = ownAccounts();
     if (!accs.length) { toast('Primero agrega una cuenta.'); return; }
     const g = existing || { accountId: (accs.find(a => a.id === ui.accountId) || accs[0]).id, startDate: today(), deadline: A.addDays(today(), 90) };
     modal({
@@ -336,14 +385,15 @@
   function viewCuenta(v) {
     const a = S.account(ui.accountId);
     if (!a) { go('resumen'); return; }
-    const linked = a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId);
-    setHeader(a.name, `${plat(a.platform).label}${a.handle ? ' · ' + a.handle : ''}${a.owner ? ' · ' + a.owner : ''}`,
-      periodSeg() + (linked ? `<button class="btn" data-act="sync" data-id="${a.id}" ${ui.syncing[a.id] ? 'disabled' : ''}>${ui.syncing[a.id] ? 'Sincronizando…' : '↻ Sincronizar'}</button>` : '') + `<button class="btn" data-act="new-goal">＋ Meta</button>`);
+    const linked = canMeasure(a);
+    const verb = a.source === 'public' ? 'Medir ahora' : 'Sincronizar';
+    setHeader(a.name, `${plat(a.platform).label}${a.handle ? ' · ' + a.handle : ''}${a.role === 'competidor' ? ' · competidor' : a.owner ? ' · ' + a.owner : ''}${a.source === 'public' ? ' · datos públicos' : ''}`,
+      periodSeg() + (linked ? `<button class="btn" data-act="sync" data-id="${a.id}" ${ui.syncing[a.id] ? 'disabled' : ''}>${ui.syncing[a.id] ? 'Midiendo…' : '↻ ' + verb}</button>` : '') + (a.role === 'competidor' ? '' : `<button class="btn" data-act="new-goal">＋ Meta</button>`));
     const tabs = [['metricas', 'Métricas'], ['tendencias', 'Tendencias'], ['contenido', 'Contenido'], ['diagnostico', 'Diagnóstico'], ['datos', 'Datos e importación']]
       .filter(([k]) => k !== 'contenido' || isSocial(a.platform)).concat(a.platform === 'meta_ads' ? [['campanas', 'Campañas']] : []);
     const rows = S.rows(a.id);
     const body = !rows.length && ui.tab !== 'datos'
-      ? `<div class="empty"><h2>Esta cuenta no tiene datos todavía</h2><p>${linked ? 'Sincroniza con Meta o ' : ''}importa el CSV que exporta la plataforma.</p><button class="btn primary" data-act="tab" data-tab="datos">Cargar datos</button></div>`
+      ? `<div class="empty"><h2>Esta cuenta no tiene datos todavía</h2><p>${a.source === 'public' ? 'Pulsa <b>Medir ahora</b> para tomar la primera foto de la cuenta.' : (linked ? 'Sincroniza con Meta o ' : '') + 'importa el CSV que exporta la plataforma.'}</p>${a.source === 'public' ? `<button class="btn primary" data-act="sync" data-id="${a.id}">↻ Medir ahora</button>` : '<button class="btn primary" data-act="tab" data-tab="datos">Cargar datos</button>'}</div>`
       : ({ metricas: tabMetricas, tendencias: tabTendencias, contenido: tabContenido, diagnostico: tabDiagnostico, datos: tabDatos, campanas: tabCampanas }[ui.tab] || tabMetricas)(a, rows);
     v.innerHTML = `<div class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-act="tab" data-tab="${k}" class="${ui.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div><div id="tab-body">${body}</div>`;
     if (ui.tab === 'tendencias' && rows.length) mountTrend(a, rows);
@@ -454,8 +504,13 @@
     const last = [...rows].reverse().slice(0, 21);
     const cols = fields.filter(f => last.some(r => r[f === 'position' ? 'positionSum' : f] != null));
     const label = f => (f === 'position' ? 'Posición promedio' : (M.FIELDS[f] || {}).label || f);
-    const linked = a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId);
-    return `<div class="grid two section">
+    const linked = a.source !== 'public' && a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId);
+    const pubCard = a.source === 'public' ? `<div class="card section"><div class="row"><div style="flex:1;min-width:260px"><h2>Medición pública (sin iniciar sesión)</h2>
+      <p class="muted small">Se mide desde afuera, como a un competidor: <b>seguidores, publicaciones, me gusta y comentarios</b>. Pulso toma una foto cada día que abres la app; con varios días ves la curva de crecimiento.
+      Alcance, impresiones, guardados y visitas no son públicos.${a.lastPublic ? `<br>Última medición: ${new Date(a.lastPublic.at).toLocaleString('es-DO')} · vía ${esc(a.lastPublic.via)}` : ''}</p>
+      ${a.role !== 'competidor' ? `<p class="small callout">¿Quieres los datos completos de esta cuenta sin tener la sesión en tu Mac? En la computadora donde está abierta (la de Windows), exporta <b>${a.platform === 'tiktok' ? 'TikTok Studio → Analíticas → Descargar datos' : 'Meta Business Suite → Estadísticas → Exportar datos'}</b>, mándate el CSV y súbelo aquí abajo en "Importar CSV". Se combina con la medición pública.</p>` : ''}</div>
+      <button class="btn primary" data-act="sync" data-id="${a.id}">↻ Medir ahora</button></div></div>` : '';
+    return pubCard + `<div class="grid two section">
       <div class="card"><h2>Importar CSV</h2><p class="muted small">${esc(EXPORT_HELP[a.platform] || '')}</p>
         <div class="row"><input type="file" id="csv-file" accept=".csv,.txt,text/csv"></div>
         <details style="margin-top:8px"><summary class="small">…o pega el contenido</summary><textarea id="csv-text" placeholder="Fecha,Seguidores,Alcance,…"></textarea></details>
@@ -475,6 +530,8 @@
       <label class="field">Nombre<input name="name" type="text" value="${esc(a.name)}"></label>
       <label class="field">Usuario / URL<input name="handle" type="text" value="${esc(a.handle || '')}"></label>
       <label class="field">Responsable<select name="owner">${S.state.people.map(p => `<option ${p === a.owner ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+      <label class="field">Es<select name="role"><option value="propia">Cuenta que manejo</option><option value="competidor" ${a.role === 'competidor' ? 'selected' : ''}>Competidor</option></select></label>
+      ${['instagram', 'tiktok'].includes(a.platform) ? `<label class="field">Medición<select name="source"><option value="api">Con acceso (Meta / CSV)</option><option value="public" ${a.source === 'public' ? 'selected' : ''}>Pública, sin iniciar sesión</option></select></label>` : ''}
       ${a.platform === 'instagram' ? `<label class="field">ID de Instagram (Meta)<input name="igId" type="text" value="${esc((a.meta || {}).igId || '')}"></label>` : ''}
       ${a.platform === 'facebook' ? `<label class="field">ID de la Página<input name="pageId" type="text" value="${esc((a.meta || {}).pageId || '')}"></label>` : ''}
       ${a.platform === 'meta_ads' ? `<label class="field">ID cuenta publicitaria<input name="adAccountId" type="text" value="${esc((a.meta || {}).adAccountId || '')}" placeholder="act_123…"></label>` : ''}
@@ -782,19 +839,74 @@
       for (const p of pages) {
         items.push({ platform: 'facebook', name: p.name, id: p.id, key: 'pageId', sub: `${M.compact(p.followers_count || p.fan_count || 0)} seguidores` });
         const ig = p.instagram_business_account;
-        if (ig) items.push({ platform: 'instagram', name: '@' + (ig.username || ig.id), id: ig.id, key: 'igId', sub: `${M.compact(ig.followers_count || 0)} seguidores · vinculado a ${p.name}` });
+        if (ig) items.push({ platform: 'instagram', name: '@' + (ig.username || ig.id), id: ig.id, key: 'igId', sub: `${M.compact(ig.followers_count || 0)} seguidores · vinculado a ${p.name}`, lupa: true });
       }
+      let lupa = await P.getPref('lupaIgId');
+      const firstIg = items.find(i => i.lupa);
+      if (!lupa && firstIg) { lupa = firstIg.id; await P.setPref('lupaIgId', lupa); }
       for (const a of ads) items.push({ platform: 'meta_ads', name: a.name, id: a.id, key: 'adAccountId', sub: `${a.id} · ${a.currency || ''}${a.account_status !== 1 ? ' · inactiva' : ''}` });
       out.innerHTML = `<p class="small">Conectado como <b>${esc(me.name)}</b>. ${items.length ? 'Agrega las cuentas que quieras seguir:' : 'No encontré Páginas, Instagram ni cuentas publicitarias con ese token: revisa los permisos.'}</p>
         ${items.map(i => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)">${platBadge(i.platform)}<div style="flex:1"><b>${esc(i.name)}</b><div class="muted small">${esc(i.sub)}</div></div>
-          ${exists(i.key, i.id) ? '<span class="badge pass">Agregada</span>' : `<button class="btn sm" data-act="meta-add" data-platform="${i.platform}" data-name="${esc(i.name)}" data-key="${i.key}" data-id="${esc(i.id)}">Agregar</button>`}</div>`).join('')}`;
+          ${i.lupa ? (i.id === lupa ? '<span class="badge info" title="Desde esta cuenta se miden las cuentas públicas y competidores">🔍 lupa</span>' : `<button class="btn sm ghost" data-act="set-lupa" data-id="${esc(i.id)}">Usar como lupa</button>`) : ''}
+          ${exists(i.key, i.id) ? '<span class="badge pass">Agregada</span>' : `<button class="btn sm" data-act="meta-add" data-platform="${i.platform}" data-name="${esc(i.name)}" data-key="${i.key}" data-id="${esc(i.id)}">Agregar</button>`}</div>`).join('')}
+        ${firstIg ? '<p class="muted small" style="margin-top:8px">🔍 La <b>cuenta lupa</b> es tu Instagram profesional desde el que Pulso consulta, por la vía oficial de Meta, los datos públicos de cuentas que no administras (la del banco, competidores). No necesitas iniciar sesión en ellas.</p>' : '<p class="muted small" style="margin-top:8px">Para medir cuentas ajenas por la vía oficial necesitas al menos un Instagram profesional tuyo vinculado a una Página (será tu "cuenta lupa").</p>'}`;
     } catch (e) { out.innerHTML = `<p class="small" style="color:var(--bad)">${esc(e.message)}</p>`; }
   }
 
-  async function syncAccount(a, days = 90) {
+  const SAFARI_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+  const userOf = handle => String(handle || '').trim().replace(/^https?:\/\/(www\.)?(instagram|tiktok)\.com\//i, '').replace(/^@/, '').split(/[/?#]/)[0];
+
+  /* Mide una cuenta desde afuera. Instagram: primero la vía oficial
+     (Business Discovery con tu "cuenta lupa"); si no está configurada,
+     el perfil web público. TikTok: el perfil web público. */
+  async function measurePublic(a) {
+    const user = userOf(a.handle);
+    if (!user) throw new Error('Falta el @usuario de la cuenta (pestaña Datos → Configuración).');
+    const t = today();
+    if (a.platform === 'instagram') {
+      let pub = null, why = '';
+      const [lupa, token] = await Promise.all([P.getPref('lupaIgId'), P.getSecret('meta_token')]);
+      if (lupa && token) {
+        try { pub = C.normalizeInstagramPublic(await (await metaClient()).discoverInstagram(lupa, user)); }
+        catch (e) { why = e.message; }
+      }
+      if (!pub) {
+        try {
+          const r = await P.http(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(user)}`,
+            { headers: { 'x-ig-app-id': '936619743392459', 'User-Agent': SAFARI_UA, 'Accept': 'application/json' } });
+          pub = r.ok ? C.normalizeInstagramPublic(r.json) : null;
+          if (!pub && !why) why = `Instagram respondió HTTP ${r.status}`;
+        } catch (e) { if (!why) why = e.message; }
+      }
+      if (!pub) throw new Error(`No pude leer @${user} (${why || 'sin datos'}). La vía estable es la oficial: Ajustes → Meta → conecta tu token y elige una "cuenta lupa". La cuenta medida debe ser profesional (empresa o creador).`);
+      const d = C.instagramPublicToData(pub, t);
+      S.upsertRows(a.id, d.rows);
+      S.setPosts(a.id, d.posts);
+      const via = pub.official ? 'Business Discovery (oficial de Meta)' : 'perfil web público';
+      S.updateAccount(a.id, { lastPublic: { at: Date.now(), via } });
+      return { followers: pub.followers, posts: pub.posts.length, via };
+    }
+    if (a.platform === 'tiktok') {
+      const r = await P.http(`https://www.tiktok.com/@${encodeURIComponent(user)}`, { headers: { 'User-Agent': SAFARI_UA, 'Accept': 'text/html', 'Accept-Language': 'es-DO,es;q=0.9' } });
+      const st = r.ok ? C.parseTikTokProfile(r.body) : null;
+      if (!st || st.followers == null) throw new Error('TikTok no devolvió los datos del perfil (a veces pide verificación). Intenta más tarde o anota los números a mano en Registro manual.');
+      S.upsertRows(a.id, C.tiktokPublicToRows(st, S.rows(a.id), t));
+      const via = 'perfil web público';
+      S.updateAccount(a.id, { lastPublic: { at: Date.now(), via } });
+      return { followers: st.followers, via };
+    }
+    throw new Error('La medición pública está disponible para Instagram y TikTok. Para Facebook usa el registro manual o el CSV.');
+  }
+
+  async function syncAccount(a, days = 90, quiet = false) {
     if (ui.syncing[a.id]) return;
     ui.syncing[a.id] = true; if (ui.view === 'cuenta') render();
     try {
+      if (a.source === 'public') {
+        const r = await measurePublic(a);
+        if (!quiet) toast(`${a.name}: ${M.compact(r.followers)} seguidores${r.posts != null ? `, ${r.posts} publicaciones recientes` : ''} · vía ${r.via}.`);
+        throw null; // termina aquí sin pasar por Meta
+      }
       const client = await metaClient();
       const progress = msg => { $('#sync-status').textContent = `${a.name}: ${msg}`; };
       let res;
@@ -806,18 +918,20 @@
       if (res.posts) S.setPosts(a.id, res.posts);
       if (res.campaigns) S.setCampaigns(a.id, res.campaigns);
       toast(`${a.name}: ${res.rows.length} días sincronizados${res.posts ? `, ${res.posts.length} publicaciones` : ''}.`);
-    } catch (e) { toast(`${a.name}: ${e.message}`, true); }
+    } catch (e) { if (e) { if (quiet) console.warn(a.name, e.message); else toast(`${a.name}: ${e.message}`, true); } }
     ui.syncing[a.id] = false;
     $('#sync-status').textContent = '';
     render();
   }
 
   // ── Agregar cuenta ──────────────────────────────────────────
-  function accountModal() {
+  function accountModal(preset = {}) {
     modal({
-      title: 'Agregar cuenta',
+      title: preset.role === 'competidor' ? 'Agregar competidor' : 'Agregar cuenta',
       body: `<div class="form-grid">
-        <label class="field">Plataforma<select name="platform">${Object.entries(M.PLATFORMS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('')}</select></label>
+        <label class="field">Plataforma<select name="platform">${Object.entries(M.PLATFORMS).map(([k, p]) => `<option value="${k}" ${k === (preset.platform || 'instagram') ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></label>
+        <label class="field">Es<select name="role"><option value="propia">Cuenta que manejo</option><option value="competidor" ${preset.role === 'competidor' ? 'selected' : ''}>Competidor</option></select></label>
+        <label class="field">¿Cómo la medimos?<select name="source"><option value="public" ${preset.source !== 'api' ? 'selected' : ''}>Sin iniciar sesión (datos públicos)</option><option value="api" ${preset.source === 'api' ? 'selected' : ''}>Tengo acceso (Meta conectado o CSV)</option></select></label>
         <label class="field">Nombre<input name="name" type="text" placeholder="Ej.: Banco · Instagram"></label>
         <label class="field">Usuario o URL<input name="handle" type="text" placeholder="@cuenta o https://…"></label>
         <label class="field">Responsable<select name="owner">${S.state.people.map(p => `<option ${p === ui.person ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label></div>
@@ -826,15 +940,26 @@
       onMount(el, close) {
         const hint = () => {
           const p = $('[name=platform]', el).value;
+          const canPublic = ['instagram', 'tiktok'].includes(p);
+          const src = $('[name=source]', el);
+          src.disabled = !canPublic; if (!canPublic) src.value = 'api';
+          if (canPublic && src.value === 'public') {
+            $('#acc-hint', el).innerHTML = `<b>Sin iniciar sesión:</b> Pulso mide seguidores, publicaciones, me gusta y comentarios, igual que con un competidor, y toma una foto cada día que abres la app. Escribe el @usuario.${p === 'instagram' ? ' Para la vía oficial y estable, configura una "cuenta lupa" en Ajustes → Meta.' : ''}`;
+            return;
+          }
           $('#acc-hint', el).textContent = ['instagram', 'facebook', 'meta_ads'].includes(p) ? 'Tip: en Ajustes → Meta puedes agregar estas cuentas ya conectadas para sincronizarlas solas.'
             : p === 'linkedin' ? 'LinkedIn personal: carga los datos con el export de Analíticas o el registro manual.' : p === 'tiktok' ? 'TikTok: importa el CSV de TikTok Studio desde la pestaña Datos.' : 'Sitio web: pon la URL completa para usarla en el auditor SEO.';
         };
-        $('[name=platform]', el).addEventListener('change', hint); hint();
+        $('[name=platform]', el).addEventListener('change', hint); $('[name=source]', el).addEventListener('change', hint); hint();
         $('[data-save]', el).addEventListener('click', () => {
           const g = n => $(`[name=${n}]`, el).value.trim();
           const platform = g('platform');
-          const acc = S.addAccount({ platform, name: g('name') || M.PLATFORMS[platform].label, handle: g('handle'), owner: g('owner'), meta: {}, personal: platform === 'linkedin' });
-          close(); go('cuenta', { accountId: acc.id, tab: 'datos' });
+          const source = $('[name=source]', el).disabled ? 'api' : g('source');
+          if (source === 'public' && !userOf(g('handle'))) { toast('Escribe el @usuario para poder medirla.', true); return; }
+          const acc = S.addAccount({ platform, name: g('name') || `${userOf(g('handle')) ? '@' + userOf(g('handle')) : M.PLATFORMS[platform].label} · ${M.PLATFORMS[platform].label}`, handle: g('handle'), owner: g('owner'), meta: {}, personal: platform === 'linkedin', role: g('role'), source });
+          close();
+          if (source === 'public') { go('cuenta', { accountId: acc.id, tab: 'metricas' }); syncAccount(acc); }
+          else go('cuenta', { accountId: acc.id, tab: 'datos' });
         });
       },
     });
@@ -848,6 +973,9 @@
   // ── Acciones ────────────────────────────────────────────────
   const ACTIONS = {
     'add-account': () => accountModal(),
+    'add-competitor': () => accountModal({ role: 'competidor', source: 'public' }),
+    'set-lupa': async b => { await P.setPref('lupaIgId', b.dataset.id); toast('Cuenta lupa actualizada.'); metaDiscover(); },
+    'measure-all': async () => { for (const a of visibleAccounts().filter(x => x.source === 'public')) await syncAccount(a, 90, true); toast('Mediciones actualizadas.'); },
     'go-settings': () => go('ajustes'),
     'go-goals': () => go('metas'),
     'go-diag': () => { const a = visibleAccounts()[0]; if (a) go('cuenta', { accountId: a.id, tab: 'diagnostico' }); },
@@ -862,7 +990,7 @@
     'demo-load': () => { D.apply(S.state); S.save(true); toast('Datos de demostración cargados.'); go('resumen'); },
     'demo-remove': () => { D.remove(S.state); S.save(true); toast('Demo eliminada.'); render(); },
     'sync': b => { const a = S.account(b.dataset.id); const d = $('#sync-days'); syncAccount(a, d ? +d.value : 90); },
-    'sync-all': async () => { for (const a of visibleAccounts().filter(x => x.meta && (x.meta.igId || x.meta.pageId || x.meta.adAccountId))) await syncAccount(a); },
+    'sync-all': async () => { for (const a of visibleAccounts().filter(canMeasure)) await syncAccount(a, 90, a.source === 'public'); },
     'import-csv': async () => {
       const a = S.account(ui.accountId);
       const text = (await readFileInput('#csv-file')) || $('#csv-text').value;
@@ -889,7 +1017,9 @@
       const g = n => { const el = $(`#acc-form [name=${n}]`); return el ? el.value.trim() : undefined; };
       const meta = Object.assign({}, a.meta);
       for (const k of ['igId', 'pageId', 'adAccountId']) if (g(k) !== undefined) meta[k] = g(k);
-      S.updateAccount(a.id, { name: g('name') || a.name, handle: g('handle'), owner: g('owner'), meta });
+      const patch = { name: g('name') || a.name, handle: g('handle'), owner: g('owner'), meta, role: g('role') || a.role };
+      if (g('source') !== undefined) patch.source = g('source');
+      S.updateAccount(a.id, patch);
       toast('Cuenta actualizada.'); render();
     },
     'del-account': b => { if (confirm('¿Eliminar la cuenta y todos sus datos?')) { S.removeAccount(b.dataset.id); go('resumen'); } },
@@ -948,7 +1078,7 @@
   // Atajos de teclado tipo Mac: ⌘1…⌘6 para las secciones
   document.addEventListener('keydown', e => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-    const map = { 1: 'resumen', 2: 'metas', 3: 'estratega', 4: 'seo', 5: 'academia', 6: 'ajustes' };
+    const map = { 1: 'resumen', 2: 'metas', 3: 'comparativa', 4: 'estratega', 5: 'seo', 6: 'academia', 7: 'ajustes' };
     if (map[e.key]) { e.preventDefault(); go(map[e.key]); }
   });
   $('#view').addEventListener('keydown', e => {
@@ -962,6 +1092,11 @@
     const saved = await P.getPref('person');
     if (saved && (saved === 'Todos' || S.state.people.includes(saved))) ui.person = saved;
     render();
+    // Una foto diaria de las cuentas públicas (la curva de seguidores se arma sola)
+    (async () => {
+      const due = S.state.accounts.filter(a => a.source === 'public' && !a.demo && (A.latestDate(S.rows(a.id)) || '') < today());
+      for (const a of due) await syncAccount(a, 90, true);
+    })();
     S.subscribe(() => { const t = $('#sync-status'); if (t && !t.textContent.includes(':')) t.textContent = 'Guardado ' + new Date().toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }); });
     // Trae los cambios de la otra persona cada minuto y al volver a la ventana
     const pull = async () => { if (await S.refresh()) render(); };

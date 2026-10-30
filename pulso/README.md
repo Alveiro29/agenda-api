@@ -19,7 +19,8 @@ presupuesto publicitario y arma planes de crecimiento con las tasas reales de tu
 **Opción A: compilar en tu Mac (2 minutos)**
 ```bash
 xcode-select --install          # solo la primera vez
-git clone https://github.com/Alveiro29/agenda-api && cd agenda-api/pulso
+git clone -b claude/mac-business-metrics-app-d9kx29 https://github.com/Alveiro29/agenda-api
+cd agenda-api/pulso
 ./build-app.sh --install        # compila y la deja en /Aplicaciones
 ```
 
@@ -54,6 +55,26 @@ Requiere macOS 12 o superior, en Apple Silicon o Intel.
 6. **Sitio web**: agrega una cuenta *Sitio web / SEO* con la URL. En Search Console exporta
    *Rendimiento*: la pestaña **Fechas** se carga en la cuenta y la de **Consultas** en SEO → Search Console.
 7. **Analista IA (opcional)**: pon tu API key de console.anthropic.com en Ajustes.
+
+## Cuentas a las que no tienes acceso (sin iniciar sesión)
+
+Sirve para la cuenta de un cliente cuya sesión solo está abierta en otra computadora, y para los competidores.
+Al agregar la cuenta elige **¿Cómo la medimos? → Sin iniciar sesión (datos públicos)** y escribe el @usuario.
+
+- **Instagram, vía oficial (recomendada):** usa *Business Discovery* de Meta. En Ajustes → Meta conecta
+  tu token y Pulso elige como **cuenta lupa** tu propio Instagram profesional. Desde ahí consulta los
+  datos públicos de cualquier cuenta profesional (empresa o creador) sin entrar a ella.
+- **Instagram sin token:** lee el perfil web público. Funciona, pero Instagram puede limitarlo.
+- **TikTok:** lee el perfil web público.
+- **Qué se mide:** seguidores, publicaciones, me gusta y comentarios por post, formato y día. Alcance,
+  impresiones, guardados y visitas no son públicos.
+- **Curva de crecimiento:** Pulso toma una foto diaria cada vez que se abre. También puedes pulsar *Medir ahora*.
+- **Datos completos de la cuenta del cliente:** en la computadora donde está abierta la sesión, exporta
+  Meta Business Suite → Estadísticas → Exportar datos (o TikTok Studio → Descargar datos). Después importa
+  el CSV en la cuenta y se combina con la medición pública.
+- **Comparativa:** pone tus cuentas y las de los competidores lado a lado con las mismas métricas
+  públicas (crecimiento, posts por semana e interacción por post). También enlaza a la Biblioteca de
+  anuncios de Meta para ver qué anuncios tiene activos cada uno.
 
 ## Privacidad
 

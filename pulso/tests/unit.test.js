@@ -182,7 +182,7 @@ test('el store fusiona en vez de pisar cuando la otra persona guardó antes', as
 test('los datos de demostración calculan sin errores en todas las métricas y metas', () => {
   const st = S.empty();
   D.apply(st, '2026-10-23');
-  assert.equal(st.accounts.length, 6);
+  assert.equal(st.accounts.length, 8);
   for (const a of st.accounts) {
     const c = A.comparePeriods(st.series[a.id], a.platform, 28);
     for (const [k, v] of Object.entries(c.current)) if (v != null) assert.ok(isFinite(v), `${a.id}.${k}`);
@@ -205,4 +205,49 @@ test('cada métrica del catálogo tiene explicación, fórmula y trampa', () => 
   assert.equal(M.grade(M.byKey.ctr, 0.02, 'meta_ads').level, 'great');
   assert.equal(M.grade(M.byKey.cpm, 8, 'meta_ads').level, 'low');
   assert.equal(M.grade(M.byKey.frequency, 5, 'meta_ads').level, 'high');
+});
+
+test('medición pública de Instagram: Business Discovery → filas diarias y posts', () => {
+  const bd = { username: 'banco', followers_count: 50000, media_count: 900, media: { data: [
+    { id: '1', timestamp: '2026-10-20T14:00:00+0000', like_count: 300, comments_count: 20, media_type: 'CAROUSEL_ALBUM', media_product_type: 'FEED' },
+    { id: '2', timestamp: '2026-10-20T20:00:00+0000', like_count: 100, comments_count: 5, media_type: 'VIDEO', media_product_type: 'REELS' },
+    { id: '3', timestamp: '2026-10-22T10:00:00+0000', like_count: 50, comments_count: 0, media_type: 'IMAGE' } ] } };
+  const pub = C.normalizeInstagramPublic(bd);
+  assert.equal(pub.official, true);
+  const d = C.instagramPublicToData(pub, '2026-10-30');
+  const byDate = Object.fromEntries(d.rows.map(r => [r.date, r]));
+  assert.equal(byDate['2026-10-30'].followers, 50000);
+  assert.deepEqual(byDate['2026-10-20'], { date: '2026-10-20', posts: 2, likes: 400, comments: 25, engagements: 425 });
+  assert.equal(d.posts[1].type, 'Reel');
+  close(A.postER(d.posts[0]), 320 / 50000); // sin alcance, la base son los seguidores
+});
+
+test('medición pública de Instagram: respaldo con el JSON del perfil web', () => {
+  const web = { data: { user: { username: 'comp', full_name: 'Comp', edge_followed_by: { count: 1234 }, edge_owner_to_timeline_media: { count: 77, edges: [
+    { node: { id: '9', shortcode: 'abc', taken_at_timestamp: 1793000000, edge_liked_by: { count: 40 }, edge_media_to_comment: { count: 3 }, __typename: 'GraphSidecar' } }] } } } };
+  const pub = C.normalizeInstagramPublic(web);
+  assert.equal(pub.official, false);
+  assert.equal(pub.followers, 1234);
+  assert.equal(pub.posts[0].type, 'Carrusel');
+  assert.equal(pub.posts[0].permalink, 'https://www.instagram.com/p/abc/');
+  assert.equal(C.normalizeInstagramPublic({ status: 'fail' }), null);
+});
+
+test('medición pública de TikTok: lee el perfil y calcula lo nuevo contra la medición anterior', () => {
+  const data = { __DEFAULT_SCOPE__: { 'webapp.user-detail': { userInfo: { user: { uniqueId: 'banco' }, stats: { followerCount: 8100, heartCount: 250000, videoCount: 120 } } } } };
+  const html = `<html><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(data)}</script></html>`;
+  const st = C.parseTikTokProfile(html);
+  assert.deepEqual(st, { username: 'banco', name: undefined, followers: 8100, hearts: 250000, videos: 120 });
+  const first = C.tiktokPublicToRows(st, [], '2026-10-29');
+  assert.equal(first[0].likes, undefined, 'la primera medición no tiene contra qué comparar');
+  const second = C.tiktokPublicToRows({ ...st, followers: 8150, hearts: 251500, videos: 122 }, first, '2026-10-30');
+  assert.equal(second[0].likes, 1500);
+  assert.equal(second[0].posts, 2);
+  assert.equal(C.parseTikTokProfile('<html>captcha</html>'), null);
+});
+
+test('diagnóstico explica los límites de una cuenta medida sin sesión', () => {
+  const rows = [{ date: '2026-10-29', followers: 1000 }, { date: '2026-10-30', followers: 1010, posts: 1, likes: 5, comments: 0, engagements: 5 }];
+  const d = A.diagnose({ id: 'b', name: 'Banco', platform: 'instagram', source: 'public' }, rows, [], 28);
+  assert.ok(d.some(x => x.title === 'Medida con datos públicos'));
 });
