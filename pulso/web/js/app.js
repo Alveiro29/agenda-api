@@ -1084,6 +1084,11 @@
           const platform = g('platform');
           const source = $('[name=source]', el).disabled ? 'api' : g('source');
           if (source === 'public' && !userOf(g('handle'))) { toast('Escribe el @usuario para poder medirla.', true); return; }
+          const dup = S.findDuplicate({ platform, handle: g('handle'), name: g('name'), meta: {} });
+          if (dup) {
+            toast(`Esa cuenta ya existe: "${dup.name}"${dup.clientId ? ` (cliente ${clientName(dup.clientId)})` : ''}. Te llevo a ella.`, true);
+            close(); ui.client = dup.clientId && S.client(dup.clientId) ? dup.clientId : 'todos'; go('cuenta', { accountId: dup.id, tab: 'datos' }); return;
+          }
           const acc = S.addAccount({ platform, name: g('name') || `${userOf(g('handle')) ? '@' + userOf(g('handle')) : M.PLATFORMS[platform].label} · ${M.PLATFORMS[platform].label}`, handle: g('handle'), owner: g('owner'), meta: {}, personal: platform === 'linkedin', role: g('role'), source, clientId: g('clientId') || undefined });
           close();
           if (source === 'public') { go('cuenta', { accountId: acc.id, tab: 'metricas' }); syncAccount(acc); }
@@ -1165,6 +1170,8 @@
       for (const k of ['igId', 'pageId', 'adAccountId']) if (g(k) !== undefined) meta[k] = g(k);
       const patch = { name: g('name') || a.name, handle: g('handle'), owner: g('owner'), meta, role: g('role') || a.role, clientId: g('clientId') || undefined };
       if (g('source') !== undefined) patch.source = g('source');
+      const dup = S.findDuplicate(Object.assign({}, a, patch), a.id);
+      if (dup) { toast(`No se guardó: ya existe otra cuenta igual ("${dup.name}"${dup.clientId ? `, cliente ${clientName(dup.clientId)}` : ''}).`, true); return; }
       S.updateAccount(a.id, patch);
       toast('Cuenta actualizada.'); render();
     },
@@ -1204,6 +1211,14 @@
     'meta-discover': () => metaDiscover(),
     'meta-add': b => {
       const meta = { [b.dataset.key]: b.dataset.id };
+      const handle = b.dataset.platform === 'instagram' ? b.dataset.name : '';
+      const dup = S.findDuplicate({ platform: b.dataset.platform, handle, name: b.dataset.name, meta });
+      if (dup) {
+        // Ya estaba (por ejemplo medida sin sesión): se conecta a Meta en vez de duplicarla
+        S.updateAccount(dup.id, { meta: Object.assign({}, dup.meta, meta), source: undefined });
+        b.outerHTML = '<span class="badge pass">Conectada</span>'; renderNav(); toast(`${dup.name} ya existía: ahora queda conectada a Meta.`);
+        return;
+      }
       S.addAccount({ platform: b.dataset.platform, name: b.dataset.name, handle: b.dataset.platform === 'instagram' ? b.dataset.name : '', owner: ui.person === 'Todos' ? S.state.people[0] : ui.person, meta });
       b.outerHTML = '<span class="badge pass">Agregada</span>'; renderNav(); toast(`${b.dataset.name} agregada. Ábrela y pulsa Sincronizar.`);
     },
@@ -1239,6 +1254,7 @@
     applyTheme(await P.getPref('theme'));
     try { ui.claudePath = await P.claudeCodePath(); } catch (e) { ui.claudePath = ''; }
     await S.load();
+    if (S.lastDeduped) setTimeout(() => toast(`Se unieron ${S.lastDeduped} cuenta(s) duplicada(s) sin perder datos.`), 600);
     const savedClient = await P.getPref('client');
     if (savedClient) ui.client = savedClient;
     const saved = await P.getPref('person');

@@ -273,3 +273,42 @@ test('la fusión conserva los clientes de las dos personas', () => {
   const m = S.merge(a, b);
   assert.deepEqual(m.clients.map(c => c.name).sort(), ['Banco Ademi', 'Katherin']);
 });
+
+test('detecta cuentas duplicadas por ID de Meta, @usuario o dominio', () => {
+  const st = S.empty();
+  st.accounts = [
+    { id: 'a', platform: 'instagram', name: 'Ademi IG', handle: '@BancoAdemi', meta: {} },
+    { id: 'b', platform: 'facebook', name: 'Ademi FB', meta: { pageId: '123' } },
+    { id: 'c', platform: 'web', name: 'Web', handle: 'https://www.ademi.com.do/' },
+    { id: 'd', platform: 'meta_ads', name: 'Ads', meta: { adAccountId: 'act_999' } },
+  ];
+  assert.equal(S.findDuplicate(st, { platform: 'instagram', handle: 'https://instagram.com/bancoademi/' }).id, 'a');
+  assert.equal(S.findDuplicate(st, { platform: 'instagram', name: '@bancoademi', handle: '' }).id, 'a');
+  assert.equal(S.findDuplicate(st, { platform: 'tiktok', handle: '@bancoademi' }), null, 'otra red no es duplicado');
+  assert.equal(S.findDuplicate(st, { platform: 'facebook', meta: { pageId: '123' } }).id, 'b');
+  assert.equal(S.findDuplicate(st, { platform: 'web', handle: 'ademi.com.do' }).id, 'c');
+  assert.equal(S.findDuplicate(st, { platform: 'meta_ads', meta: { adAccountId: '999' } }).id, 'd');
+  assert.equal(S.findDuplicate(st, { platform: 'instagram', handle: '@bancoademi' }, 'a'), null, 'al editarse a sí misma no choca');
+});
+
+test('une duplicados existentes sin perder datos', () => {
+  const st = S.empty();
+  st.accounts = [
+    { id: 'old', platform: 'instagram', name: '@ademi', handle: '@ademi', source: 'public', createdAt: 1, clientId: 'c1' },
+    { id: 'new', platform: 'instagram', name: 'Ademi', handle: '@Ademi', meta: { igId: '55' }, createdAt: 2 },
+  ];
+  st.series = { old: [{ date: '2026-10-01', followers: 100 }], new: [{ date: '2026-10-01', reach: 50 }, { date: '2026-10-02', reach: 70 }] };
+  st.posts = { old: [{ id: 'p1', date: '2026-10-01' }], new: [{ id: 'p2', date: '2026-10-02' }] };
+  st.goals = [{ id: 'g', accountId: 'new', metric: 'reach' }];
+  assert.equal(S.dedupeAccounts(st), 1);
+  assert.equal(st.accounts.length, 1);
+  const a = st.accounts[0];
+  assert.equal(a.id, 'old');
+  assert.equal(a.meta.igId, '55');
+  assert.equal(a.source, undefined, 'queda conectada a Meta');
+  assert.equal(a.clientId, 'c1');
+  assert.deepEqual(st.series.old, [{ date: '2026-10-01', followers: 100, reach: 50 }, { date: '2026-10-02', reach: 70 }]);
+  assert.equal(st.posts.old.length, 2);
+  assert.equal(st.goals[0].accountId, 'old');
+  assert.ok(st.deleted.new);
+});

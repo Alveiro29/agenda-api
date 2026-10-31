@@ -61,6 +61,16 @@ const assert = require('node:assert/strict');
   assert.equal(await page.locator('[name=source]').isDisabled(), true, 'Facebook no tiene medición pública');
   await page.keyboard.press('Escape');
 
+  // No permite duplicar una cuenta
+  await page.click('[data-nav=resumen]');
+  await page.click('[data-act=add-account] >> nth=0');
+  await page.selectOption('[name=platform]', 'instagram');
+  await page.fill('[name=handle]', 'https://instagram.com/competidor.a/');
+  await page.click('[data-save]');
+  await page.waitForTimeout(150);
+  assert.equal(await page.textContent('#title'), 'Competidor A · Instagram', 'abre la cuenta existente');
+  assert.equal(await page.evaluate(() => PulsoApp.S.state.accounts.filter(a => (a.handle || '').toLowerCase().includes('competidor.a')).length), 1);
+
   // Planificador
   await page.click('[data-nav=estratega]');
   await page.click('[data-act=plan]');

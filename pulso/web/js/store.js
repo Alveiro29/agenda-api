@@ -84,6 +84,62 @@
     return out;
   }
 
+  // ── Cuentas duplicadas ──────────────────────────────────────
+  /* Identidad de una cuenta: sus IDs de Meta y su @usuario / dominio
+     normalizado. Dos cuentas de la misma red que compartan cualquiera
+     de estas claves son la misma cuenta. */
+  function handleKey(platform, handle, name) {
+    let h = String(handle || '').trim();
+    if (!h && platform === 'instagram' && /^@/.test(name || '')) h = name;
+    if (!h) return null;
+    if (platform === 'web') {
+      try { return new URL(/^https?:/i.test(h) ? h : 'https://' + h).host.replace(/^www\./, '').toLowerCase(); } catch (e) { return null; }
+    }
+    h = h.replace(/^https?:\/\/(www\.|m\.)?(instagram|tiktok|facebook|linkedin)\.com\/(in\/)?/i, '').replace(/^@/, '').split(/[/?#\s]/)[0];
+    return h ? h.toLowerCase() : null;
+  }
+  function accountKeys(a) {
+    const keys = [];
+    const m = a.meta || {};
+    for (const k of ['igId', 'pageId', 'adAccountId']) if (m[k]) keys.push(`${a.platform}:id:${String(m[k]).replace(/^act_/, '')}`);
+    if (a.platform === 'meta_ads' && a.handle && /^(act_)?\d+$/.test(a.handle)) keys.push(`meta_ads:id:${a.handle.replace(/^act_/, '')}`);
+    else if (a.platform !== 'meta_ads') { const h = handleKey(a.platform, a.handle, a.name); if (h) keys.push(`${a.platform}:h:${h}`); }
+    return keys;
+  }
+  function findDuplicate(state, cand, exceptId) {
+    const k = accountKeys(cand);
+    if (!k.length) return null;
+    return state.accounts.find(a => a.id !== exceptId && a.platform === cand.platform && accountKeys(a).some(x => k.includes(x))) || null;
+  }
+  /* Une las cuentas repetidas en la más antigua sin perder datos:
+     días, publicaciones, campañas y metas pasan a la que se conserva. */
+  function dedupeAccounts(state) {
+    const keep = [];
+    let merged = 0;
+    for (const a of [...state.accounts].sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0))) {
+      const k = accountKeys(a);
+      const t = k.length && keep.find(x => x.platform === a.platform && accountKeys(x).some(y => k.includes(y)));
+      if (!t) { keep.push(a); continue; }
+      t.meta = Object.assign({}, a.meta, t.meta);
+      for (const f of ['handle', 'clientId', 'owner', 'lastSync', 'lastPublic']) if (t[f] == null || t[f] === '') t[f] = a[f];
+      if (t.source === 'public' && a.source !== 'public') t.source = a.source;
+      const rows = new Map((state.series[a.id] || []).map(r => [r.date, r]));
+      for (const r of state.series[t.id] || []) rows.set(r.date, Object.assign({}, rows.get(r.date), r));
+      if (rows.size) state.series[t.id] = [...rows.values()].sort((x, y) => x.date.localeCompare(y.date));
+      const posts = new Map((state.posts[a.id] || []).map(p => [p.id, p]));
+      for (const p of state.posts[t.id] || []) posts.set(p.id, p);
+      if (posts.size) state.posts[t.id] = [...posts.values()].sort((x, y) => String(y.date).localeCompare(String(x.date)));
+      if (!(state.campaigns[t.id] || []).length && state.campaigns[a.id]) state.campaigns[t.id] = state.campaigns[a.id];
+      for (const g of state.goals) if (g.accountId === a.id) { g.accountId = t.id; g.updatedAt = Date.now(); }
+      delete state.series[a.id]; delete state.posts[a.id]; delete state.campaigns[a.id];
+      state.deleted[a.id] = Date.now();
+      t.updatedAt = Date.now();
+      merged++;
+    }
+    if (merged) state.accounts = state.accounts.filter(a => keep.includes(a));
+    return merged;
+  }
+
   const uid = (p = 'id') => p + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 
   function Store(platform) {
@@ -98,6 +154,8 @@
       const r = await platform.readData();
       try { state = normalize(r.text ? JSON.parse(r.text) : null); } catch (e) { state = empty(); }
       mtime = r.mtime || 0;
+      api.lastDeduped = dedupeAccounts(state);
+      if (api.lastDeduped) save();
       emit();
       return state;
     }
@@ -137,14 +195,16 @@
       try { other = normalize(JSON.parse(r.text)); } catch (e) { return false; }
       state = merge(state, other);
       mtime = r.mtime;
+      if (dedupeAccounts(state)) save();
       emit();
       return true;
     }
 
     const touch = x => Object.assign(x, { updatedAt: Date.now() });
 
-    return {
+    const api = {
       get state() { return state; },
+      findDuplicate: (cand, exceptId) => findDuplicate(state, cand, exceptId),
       load, save, refresh, flush,
       subscribe(fn) { subs.add(fn); return () => subs.delete(fn); },
       replace(s) { state = normalize(s); save(true); },
@@ -194,9 +254,10 @@
       },
       setSetting(k, v) { state.settings[k] = v; save(); },
     };
+    return api;
   }
 
-  const api = { Store, merge, normalize, empty, uid };
+  const api = { Store, merge, normalize, empty, uid, accountKeys, findDuplicate, dedupeAccounts, handleKey };
   root.PulsoStore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
