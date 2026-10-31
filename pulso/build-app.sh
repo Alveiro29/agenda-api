@@ -35,8 +35,12 @@ if [ -f mac/AppIcon.png ]; then
   rm -rf "$ICONSET"
 fi
 
-# Firma local (ad-hoc): suficiente para usarla en tus Macs
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+# Firma local (ad-hoc): suficiente para usarla en tus Macs.
+# El requisito fijo (por identificador) hace que el Llavero reconozca cada
+# nueva compilación como la misma app y no vuelva a pedir la contraseña.
+codesign --force --deep --sign - --identifier app.pulso.metricas \
+  -r='=designated => identifier "app.pulso.metricas"' "$APP" >/dev/null 2>&1 \
+  || codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
 echo "✓ Listo: $(pwd)/$APP"
 if [ "${1:-}" = "--install" ]; then
