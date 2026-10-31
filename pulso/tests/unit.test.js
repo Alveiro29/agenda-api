@@ -193,8 +193,11 @@ test('los datos de demostración calculan sin errores en todas las métricas y m
     const p = A.goalProgress(g, st.series[a.id], a.platform, '2026-10-23', st.series.demo_ads);
     assert.ok(['logrado', 'en_ruta', 'en_riesgo', 'fuera_de_ruta', 'vencido'].includes(p.status));
   }
+  assert.equal(st.clients.length, 3);
+  assert.ok(st.accounts.every(a => a.clientId));
   D.remove(st);
   assert.equal(st.accounts.length, 0);
+  assert.equal(st.clients.length, 0);
 });
 
 test('cada métrica del catálogo tiene explicación, fórmula y trampa', () => {
@@ -261,4 +264,12 @@ test('importa los archivos por métrica de Meta Business Suite', () => {
   assert.equal(fol.rows[0].newFollowers, 12);
   const visits = C.importCSV('"Visitas al perfil de Instagram"\n"Fecha","Primary"\n"2026-10-01T00:00:00","40"\n');
   assert.equal(visits.rows[0].profileVisits, 40);
+});
+
+test('la fusión conserva los clientes de las dos personas', () => {
+  const a = S.empty(), b = S.empty();
+  a.clients = [{ id: 'c1', name: 'Ademi', updatedAt: 1 }];
+  b.clients = [{ id: 'c2', name: 'Katherin', updatedAt: 2 }, { id: 'c1', name: 'Banco Ademi', updatedAt: 5 }];
+  const m = S.merge(a, b);
+  assert.deepEqual(m.clients.map(c => c.name).sort(), ['Banco Ademi', 'Katherin']);
 });

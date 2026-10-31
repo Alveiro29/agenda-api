@@ -80,6 +80,16 @@ h3 { font-size: 13px; }
 .nav-item .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-foot { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 8px; }
 
+.client-switch { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 6px; }
+.client-switch select { font-weight: 600; }
+.client-card { cursor: default; border-top: 4px solid var(--client, var(--accent)); }
+.client-card:hover { border-color: var(--accent); border-top-color: var(--client, var(--accent)); }
+.client-card .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+.client-card .stats b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+.client-card .stats small { color: var(--muted); }
+.nav-client { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--text-2); padding: 10px 10px 2px; text-transform: uppercase; letter-spacing: .03em; }
+.nav-client i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
 /* ── Main ── */
 main { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }

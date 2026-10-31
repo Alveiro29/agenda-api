@@ -25,6 +25,12 @@
     const [p1, p2] = people || ['José', 'Socio'];
     const now = Date.now();
 
+    const clients = [
+      { id: 'demo_cli_banco', name: 'Banco (demo)', color: '#2a78d6' },
+      { id: 'demo_cli_clinica', name: 'Clínica (demo)', color: '#e87ba4' },
+      { id: 'demo_cli_personal', name: 'Personal (demo)', color: '#6250d6' },
+    ].map((c, i) => Object.assign(c, { createdAt: now + i, updatedAt: now, demo: true }));
+    const clientOf = { demo_ig: 'demo_cli_banco', demo_fb: 'demo_cli_banco', demo_ads: 'demo_cli_banco', demo_web: 'demo_cli_banco', demo_comp1: 'demo_cli_banco', demo_comp2: 'demo_cli_banco', demo_tt: 'demo_cli_clinica', demo_in: 'demo_cli_personal' };
     const accounts = [
       { id: 'demo_ig', name: 'Marca · Instagram', platform: 'instagram', handle: '@marca.rd', owner: p1 },
       { id: 'demo_fb', name: 'Marca · Facebook', platform: 'facebook', handle: 'Marca RD', owner: p1 },
@@ -34,7 +40,7 @@
       { id: 'demo_in', name: 'José · LinkedIn', platform: 'linkedin', handle: 'in/jose', owner: p1, personal: true },
       { id: 'demo_comp1', name: 'Competidor A · Instagram', platform: 'instagram', handle: '@competidor.a', owner: p1, role: 'competidor', source: 'public' },
       { id: 'demo_comp2', name: 'Competidor B · Instagram', platform: 'instagram', handle: '@competidor.b', owner: p1, role: 'competidor', source: 'public' },
-    ].map((a, i) => Object.assign(a, { createdAt: now + i, updatedAt: now, demo: true }));
+    ].map((a, i) => Object.assign(a, { createdAt: now + i, updatedAt: now, demo: true, clientId: clientOf[a.id] }));
 
     const series = {}, posts = {}, campaigns = {};
     const types = { instagram: ['Reel', 'Carrusel', 'Imagen', 'Reel', 'Carrusel'], facebook: ['Video', 'Imagen', 'Enlace'], tiktok: ['Video'], linkedin: ['Texto', 'Documento', 'Imagen', 'Video'] };
@@ -132,12 +138,15 @@
       { id: 'demo_g4', accountId: 'demo_web', metric: 'searchClicks', target: 9000, startDate: A.addDays(end, -60), deadline: A.addDays(end, 30), title: 'Tráfico orgánico', owner: p2 },
     ].map(g => Object.assign(g, { createdAt: now, updatedAt: now, demo: true }));
 
-    return { accounts, series, posts, campaigns, goals, gsc };
+    return { clients, accounts, series, posts, campaigns, goals, gsc };
   }
 
   /* Mezcla los datos demo dentro de un estado existente (sin tocar lo real) */
   function apply(state, today) {
     const d = build(today, state.people);
+    state.clients = state.clients || [];
+    const cids = new Set(state.clients.map(c => c.id));
+    for (const c of d.clients) if (!cids.has(c.id)) state.clients.push(c);
     const ids = new Set(state.accounts.map(a => a.id));
     for (const a of d.accounts) if (!ids.has(a.id)) state.accounts.push(a);
     Object.assign(state.series, d.series);
@@ -153,6 +162,7 @@
   function remove(state) {
     const ids = state.accounts.filter(a => a.demo).map(a => a.id);
     state.accounts = state.accounts.filter(a => !a.demo);
+    state.clients = (state.clients || []).filter(c => { if (c.demo) state.deleted[c.id] = Date.now(); return !c.demo; });
     for (const id of ids) { delete state.series[id]; delete state.posts[id]; delete state.campaigns[id]; state.deleted[id] = Date.now(); }
     state.goals = state.goals.filter(g => { if (g.demo) state.deleted[g.id] = Date.now(); return !g.demo; });
     if (state.seo.gsc && state.seo.gsc.some(r => r.query === 'marca rd')) state.seo.gsc = [];

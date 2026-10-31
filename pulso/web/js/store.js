@@ -14,6 +14,7 @@
   const empty = () => ({
     version: VERSION,
     people: ['José', 'Socio'],
+    clients: [],    // [{id, name, color}] — cada cuenta tiene clientId
     accounts: [],
     series: {},     // accountId → [{date, ...campos}]
     posts: {},      // accountId → [{id, date, type, ...}]
@@ -47,6 +48,7 @@
     out.settings = Object.assign({}, (newer === a ? b : a).settings, newer.settings);
     out.accounts = byId(a.accounts, b.accounts).sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
     out.goals = byId(a.goals, b.goals);
+    out.clients = byId(a.clients, b.clients).sort((x, y) => (x.createdAt || 0) - (y.createdAt || 0));
     out.notes = byId(a.notes, b.notes);
     const ids = new Set(out.accounts.map(x => x.id));
     for (const key of ['series']) {
@@ -182,6 +184,14 @@
       addAudit(a) { state.seo.audits.unshift(touch(Object.assign({ id: uid('aud') }, a))); state.seo.audits = state.seo.audits.slice(0, 60); save(); },
       setGSC(rows) { state.seo.gsc = rows; state.seo.gscImportedAt = Date.now(); save(); },
       setPeople(list) { state.people = list; save(); },
+      client: id => state.clients.find(c => c.id === id),
+      addClient(c) { const cl = touch(Object.assign({ id: uid('cli'), createdAt: Date.now() }, c)); state.clients.push(cl); save(); return cl; },
+      updateClient(id, patch) { const c = state.clients.find(x => x.id === id); if (c) { Object.assign(c, patch); touch(c); save(); } },
+      removeClient(id) {
+        state.clients = state.clients.filter(c => c.id !== id);
+        state.accounts.forEach(a => { if (a.clientId === id) { delete a.clientId; touch(a); } });
+        state.deleted[id] = Date.now(); save();
+      },
       setSetting(k, v) { state.settings[k] = v; save(); },
     };
   }

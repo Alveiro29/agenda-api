@@ -56,6 +56,15 @@ Requiere macOS 12 o superior, en Apple Silicon o Intel.
    *Rendimiento*: la pestaña **Fechas** se carga en la cuenta y la de **Consultas** en SEO → Search Console.
 7. **Analista IA (opcional)**: pon tu API key de console.anthropic.com en Ajustes.
 
+## Clientes
+
+Cada cliente (por ejemplo, Banco Ademi o la Dra. Katherin) es un espacio aparte con sus propias
+cuentas, competidores, metas, comparativa y análisis.
+
+- **Crear un cliente:** desde el selector **Cliente** arriba en la barra lateral → *＋ Nuevo cliente*, o desde Ajustes → Clientes.
+- **Vista "Todos los clientes":** muestra una tarjeta por cliente con seguidores, alcance, leads, alertas y metas en ruta. Al tocar una, se abre ese cliente y todo Pulso queda filtrado a él.
+- **Asignar cuentas:** al agregar una cuenta eliges su cliente. Para mover una cuenta ya creada, ve a *Datos e importación → Configuración de la cuenta → Cliente*.
+
 ## Cuentas a las que no tienes acceso (sin iniciar sesión)
 
 Sirve para la cuenta de un cliente cuya sesión solo está abierta en otra computadora, y para los competidores.

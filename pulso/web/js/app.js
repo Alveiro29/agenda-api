@@ -12,7 +12,7 @@
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 
-  const ui = { view: 'resumen', accountId: null, tab: 'metricas', period: 28, person: 'Todos', seoTab: 'auditor', trendMetric: null,
+  const ui = { client: 'todos', view: 'resumen', accountId: null, tab: 'metricas', period: 28, person: 'Todos', seoTab: 'auditor', trendMetric: null,
                postSort: 'er', auditId: null, aiBusy: false, syncing: {} };
 
   // ── Utilidades ──────────────────────────────────────────────
@@ -75,7 +75,11 @@
   }
   document.addEventListener('mousedown', e => { if (popEl && !popEl.contains(e.target) && !e.target.closest('.info-btn')) { popEl.remove(); popEl = null; } });
 
-  const visibleAccounts = () => S.state.accounts.filter(a => ui.person === 'Todos' || a.owner === ui.person);
+  const inClient = a => ui.client === 'todos' || (ui.client === 'none' ? !a.clientId || !S.client(a.clientId) : a.clientId === ui.client);
+  const visibleAccounts = () => S.state.accounts.filter(a => (ui.person === 'Todos' || a.owner === ui.person || a.role === 'competidor') && inClient(a));
+  const clientName = id => (S.client(id) || {}).name || 'Sin cliente';
+  const clientColor = id => (S.client(id) || {}).color || 'var(--border-strong)';
+  const CLIENT_COLORS = ['#2a78d6', '#e87ba4', '#1baf7a', '#eb6834', '#6250d6', '#eda100', '#e34948', '#008300'];
   const ownAccounts = () => visibleAccounts().filter(a => a.role !== 'competidor');
   const canMeasure = a => a.source === 'public' || (a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId));
   const adsRows = () => { const a = S.state.accounts.find(x => x.platform === 'meta_ads'); return a ? S.rows(a.id) : []; };
@@ -93,13 +97,30 @@
   function renderNav() {
     const accs = visibleAccounts();
     const item = a => `<button class="nav-item ${ui.view === 'cuenta' && ui.accountId === a.id ? 'active' : ''}" data-account="${a.id}" title="${a.source === 'public' ? 'Medida con datos públicos' : ''}"><span class="dot" style="background:${plat(a.platform).color}"></span><span class="grow">${esc(a.name)}</span>${a.source === 'public' ? '<span class="ico small" aria-label="pública">◌</span>' : ''}</button>`;
-    const comps = accs.filter(a => a.role === 'competidor');
+    const block = list => {
+      const own = list.filter(a => a.role !== 'competidor'), comps = list.filter(a => a.role === 'competidor');
+      return own.map(item).join('') + (comps.length ? `<div class="nav-sec" style="padding-top:4px">Competidores</div>` + comps.map(item).join('') : '');
+    };
+    let accHtml;
+    if (ui.client === 'todos' && S.state.clients.length) {
+      const groups = [...S.state.clients.map(c => [c.id, c.name, c.color]), ['none', 'Sin cliente', 'var(--border-strong)']];
+      accHtml = groups.map(([id, name, color]) => {
+        const list = accs.filter(a => (id === 'none' ? !a.clientId || !S.client(a.clientId) : a.clientId === id));
+        return list.length ? `<div class="nav-client"><i style="background:${color}"></i>${esc(name)}</div>` + block(list) : '';
+      }).join('');
+    } else accHtml = block(accs);
     $('#nav').innerHTML = NAV.map(([k, label, ico]) => `<button class="nav-item ${ui.view === k ? 'active' : ''}" data-nav="${k}"><span class="ico">${ico}</span><span class="grow">${esc(label)}</span></button>`).join('')
       + `<div class="nav-sec">Cuentas</div>`
-      + accs.filter(a => a.role !== 'competidor').map(item).join('')
+      + accHtml
       + `<button class="nav-item" data-act="add-account"><span class="ico">＋</span><span class="grow">Agregar cuenta</span></button>`
-      + (comps.length ? `<div class="nav-sec">Competidores</div>` + comps.map(item).join('') : '')
       + `<div class="nav-sec"></div><button class="nav-item ${ui.view === 'ajustes' ? 'active' : ''}" data-nav="ajustes"><span class="ico">⚙</span><span class="grow">Ajustes</span></button>`;
+    const cs = $('#client');
+    const known = ui.client === 'todos' || ui.client === 'none' || S.client(ui.client);
+    if (!known) ui.client = 'todos';
+    cs.innerHTML = `<option value="todos">Todos los clientes</option>` + S.state.clients.map(c => `<option value="${c.id}" ${c.id === ui.client ? 'selected' : ''}>${esc(c.name)}</option>`).join('')
+      + (S.state.accounts.some(a => !a.clientId || !S.client(a.clientId)) && S.state.clients.length ? `<option value="none" ${ui.client === 'none' ? 'selected' : ''}>Sin cliente</option>` : '')
+      + `<option value="__new">＋ Nuevo cliente…</option>`;
+    cs.value = ui.client;
     const sel = $('#person');
     const opts = ['Todos', ...S.state.people];
     sel.innerHTML = opts.map(p => `<option ${p === ui.person ? 'selected' : ''}>${esc(p)}</option>`).join('');
@@ -110,6 +131,36 @@
     else if (b.dataset.account) go('cuenta', { accountId: b.dataset.account });
     else if (b.dataset.act === 'add-account') accountModal();
   });
+  $('#client').addEventListener('change', e => {
+    if (e.target.value === '__new') { e.target.value = ui.client; clientModal(); return; }
+    ui.client = e.target.value; P.setPref('client', ui.client);
+    if (ui.view === 'cuenta' && !visibleAccounts().some(a => a.id === ui.accountId)) ui.view = 'resumen';
+    render();
+  });
+  function clientModal(existing) {
+    modal({
+      title: existing ? 'Editar cliente' : 'Nuevo cliente',
+      body: `<label class="field">Nombre<input name="cname" type="text" value="${esc(existing ? existing.name : '')}" placeholder="Ej.: Banco Ademi, Dra. Katherin Almonte"></label>
+        <div class="row" style="gap:6px">${CLIENT_COLORS.map((c, i) => `<label style="display:inline-flex"><input type="radio" name="ccolor" value="${c}" ${(existing ? existing.color === c : i === S.state.clients.length % CLIENT_COLORS.length) ? 'checked' : ''} style="accent-color:${c}"><span style="width:18px;height:18px;border-radius:5px;background:${c};display:inline-block"></span></label>`).join('')}</div>
+        <p class="muted small">Cada cliente tiene su propio resumen, metas, competidores y comparativa.</p>`,
+      footer: `${existing ? '<button class="btn danger" data-del>Eliminar</button><span class="spacer"></span>' : ''}<button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Guardar</button>`,
+      onMount(el, close) {
+        $('[data-save]', el).addEventListener('click', () => {
+          const name = $('[name=cname]', el).value.trim();
+          if (!name) { toast('Escribe el nombre del cliente.', true); return; }
+          const color = ($('[name=ccolor]:checked', el) || {}).value || CLIENT_COLORS[0];
+          if (existing) S.updateClient(existing.id, { name, color });
+          else { const c = S.addClient({ name, color }); ui.client = c.id; P.setPref('client', c.id); }
+          close(); render();
+        });
+        const del = $('[data-del]', el);
+        if (del) del.addEventListener('click', () => {
+          if (!confirm(`¿Eliminar el cliente "${existing.name}"? Sus cuentas no se borran: quedan "Sin cliente".`)) return;
+          S.removeClient(existing.id); ui.client = 'todos'; close(); render();
+        });
+      },
+    });
+  }
   $('#person').addEventListener('change', e => { ui.person = e.target.value; P.setPref('person', ui.person); render(); });
 
   function go(view, extra = {}) {
@@ -152,8 +203,9 @@
   function viewResumen(v) {
     const accs = ownAccounts();
     const metaLinked = accs.some(canMeasure);
-    setHeader('Resumen', ui.person === 'Todos' ? 'Todas las cuentas' : `Cuentas de ${ui.person}`,
-      periodSeg() + (metaLinked ? `<button class="btn" data-act="sync-all">↻ Actualizar todo</button>` : ''));
+    const cl = S.client(ui.client);
+    setHeader(cl ? cl.name : ui.client === 'none' ? 'Sin cliente' : 'Resumen', (ui.client === 'todos' ? 'Todos los clientes' : 'Resumen del cliente') + (ui.person === 'Todos' ? '' : ` · cuentas de ${ui.person}`),
+      periodSeg() + (cl ? `<button class="btn" data-act="edit-client">Editar cliente</button>` : '') + (metaLinked ? `<button class="btn" data-act="sync-all">↻ Actualizar todo</button>` : ''));
     if (!accs.length) {
       v.innerHTML = `<div class="empty"><h2>Empecemos</h2><p>Agrega tus cuentas (Instagram, Facebook, TikTok, Meta Ads, LinkedIn y tu sitio web) o explora la app con datos de ejemplo.</p>
         <div class="row" style="justify-content:center;margin-top:14px"><button class="btn primary" data-act="add-account">Agregar cuenta</button><button class="btn" data-act="demo-load">Ver con datos de demostración</button><button class="btn" data-act="go-settings">Conectar Meta</button></div></div>`;
@@ -181,13 +233,20 @@
     const alerts = accs.flatMap(a => A.diagnose(a, S.rows(a.id), S.state.posts[a.id], ui.period)).filter(d => d.severity === 'alta').slice(0, 6);
     const goals = S.state.goals.filter(g => accs.some(a => a.id === g.accountId));
 
+    const mixed = ui.client === 'todos' && S.state.clients.length > 0;
     v.innerHTML = `
-      <div class="section"><div class="grid kpis">${kpis.map(([key, label, k]) => `
+      <div class="section" ${mixed ? 'hidden' : ''}><div class="grid kpis">${kpis.map(([key, label, k]) => `
         <div class="card kpi"><div class="label">${esc(label)} <button class="info-btn" data-info="${key}" aria-label="Qué es ${esc(label)}">ⓘ</button></div>
         <div class="value">${fmtM(key, k.cur)}</div><div class="foot">${deltaHtml(key, k.delta)}<span class="muted">vs ${ui.period} días previos</span></div></div>`).join('')}</div></div>
 
-      <div class="section"><div class="section-h"><h2>Cuentas</h2><span class="muted small">Toca una cuenta para ver el detalle</span></div>
-        <div class="grid cards">${accs.map(a => accountCard(a, cmp[a.id])).join('')}</div></div>
+      ${ui.client === 'todos' && S.state.clients.length ? clientCards(accs, cmp) : ''}
+      ${ui.client === 'todos' && S.state.clients.length
+        ? [...S.state.clients.map(c => [c.id, c.name, c.color]), ['none', 'Sin cliente', 'var(--border-strong)']].map(([id, name, color]) => {
+            const list = accs.filter(a => (id === 'none' ? !a.clientId || !S.client(a.clientId) : a.clientId === id));
+            return list.length ? `<div class="section"><div class="section-h"><h2><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${color};margin-right:6px"></span>${esc(name)} · cuentas</h2></div><div class="grid cards">${list.map(a => accountCard(a, cmp[a.id])).join('')}</div></div>` : '';
+          }).join('')
+        : `<div class="section"><div class="section-h"><h2>Cuentas</h2><span class="muted small">Toca una cuenta para ver el detalle</span></div>
+        <div class="grid cards">${accs.map(a => accountCard(a, cmp[a.id])).join('')}</div></div>`}
 
       <div class="grid two">
         <div class="card"><div class="section-h"><h2>Alertas prioritarias</h2><button class="btn sm" data-act="go-diag">Ver diagnóstico</button></div>
@@ -195,6 +254,28 @@
         <div class="card"><div class="section-h"><h2>Metas</h2><button class="btn sm" data-act="go-goals">Ver todas</button></div>
           ${goals.length ? goals.slice(0, 5).map(g => goalMini(g)).join('') : `<p class="muted">Aún no hay metas. Una meta convierte las métricas en dirección.</p><button class="btn primary sm" data-act="new-goal">Crear meta</button>`}</div>
       </div>`;
+  }
+
+  /* Una tarjeta por cliente con sus números clave: es la entrada para
+     "desplegar" el cliente (clic → todo Pulso se filtra a ese cliente). */
+  function clientCards(accs, cmp) {
+    const cards = S.state.clients.map(c => {
+      const list = accs.filter(a => a.clientId === c.id);
+      const comps = S.state.accounts.filter(a => a.clientId === c.id && a.role === 'competidor').length;
+      const sum = (key, f) => { let v = null; for (const a of list.filter(f)) { const x = cmp[a.id].current[key]; if (x != null) v = (v || 0) + x; } return v; };
+      const followers = sum('followers', a => isSocial(a.platform));
+      const reach = sum('reach', a => isSocial(a.platform));
+      const leads = sum('leads', a => a.platform === 'meta_ads' || a.platform === 'web');
+      const alerts = list.flatMap(a => A.diagnose(a, S.rows(a.id), S.state.posts[a.id], ui.period)).filter(d => d.severity === 'alta').length;
+      const goals = S.state.goals.filter(g => list.some(a => a.id === g.accountId)).map(goalCalc).filter(Boolean);
+      const onTrack = goals.filter(p => p.status === 'en_ruta' || p.status === 'logrado').length;
+      return `<div class="card client-card" style="--client:${c.color}" data-act="open-client" data-id="${c.id}" tabindex="0">
+        <div class="row"><h2 style="flex:1">${esc(c.name)}</h2>${alerts ? `<span class="badge alta">${alerts} alerta${alerts > 1 ? 's' : ''}</span>` : '<span class="badge bien">Sin alertas</span>'}</div>
+        <div class="muted small">${list.length} cuenta${list.length === 1 ? '' : 's'} · ${comps} competidor${comps === 1 ? '' : 'es'} · ${list.map(a => plat(a.platform).short).filter((x, i, arr) => arr.indexOf(x) === i).join(' · ') || 'sin cuentas'}</div>
+        <div class="stats"><div><b>${followers != null ? M.compact(followers) : '—'}</b><small>Seguidores</small></div><div><b>${reach != null ? M.compact(reach) : '—'}</b><small>Alcance ${ui.period} d</small></div><div><b>${leads != null ? M.compact(leads) : '—'}</b><small>Leads ${ui.period} d</small></div></div>
+        <div class="row small"><span class="muted">Metas:</span> ${goals.length ? `<b>${onTrack}/${goals.length}</b> en ruta` : '<span class="muted">sin metas</span>'}<span class="spacer"></span><span style="color:var(--accent)">Abrir cliente →</span></div></div>`;
+    }).join('');
+    return `<div class="section"><div class="section-h"><h2>Clientes</h2><button class="btn sm" data-act="new-client">＋ Nuevo cliente</button></div><div class="grid cards">${cards}</div></div>`;
   }
 
   function primaryKeys(p, pub) {
@@ -530,6 +611,7 @@
       <label class="field">Nombre<input name="name" type="text" value="${esc(a.name)}"></label>
       <label class="field">Usuario / URL<input name="handle" type="text" value="${esc(a.handle || '')}"></label>
       <label class="field">Responsable<select name="owner">${S.state.people.map(p => `<option ${p === a.owner ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+      <label class="field">Cliente<select name="clientId"><option value="">Sin cliente</option>${S.state.clients.map(c => `<option value="${c.id}" ${c.id === a.clientId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
       <label class="field">Es<select name="role"><option value="propia">Cuenta que manejo</option><option value="competidor" ${a.role === 'competidor' ? 'selected' : ''}>Competidor</option></select></label>
       ${['instagram', 'tiktok'].includes(a.platform) ? `<label class="field">Medición<select name="source"><option value="api">Con acceso (Meta / CSV)</option><option value="public" ${a.source === 'public' ? 'selected' : ''}>Pública, sin iniciar sesión</option></select></label>` : ''}
       ${a.platform === 'instagram' ? `<label class="field">ID de Instagram (Meta)<input name="igId" type="text" value="${esc((a.meta || {}).igId || '')}"></label>` : ''}
@@ -830,6 +912,9 @@
     const [loc, metaTok, aiKey, theme] = await Promise.all([P.dataLocation(), P.getSecret('meta_token'), P.getSecret('anthropic_key'), P.getPref('theme')]);
     const st = S.state;
     v.innerHTML = `<div class="grid two">
+      <div class="card"><h2>Clientes</h2><p class="muted small">Cada cliente es un espacio aparte: sus cuentas, competidores, metas y resumen. Asigna cada cuenta a su cliente en Datos e importación → Configuración.</p>
+        ${S.state.clients.map(c => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)"><span style="width:12px;height:12px;border-radius:3px;background:${c.color}"></span><b style="flex:1">${esc(c.name)}</b><span class="muted small">${S.state.accounts.filter(a => a.clientId === c.id).length} cuentas</span><button class="btn sm" data-act="edit-client" data-id="${c.id}">Editar</button></div>`).join('') || '<p class="muted">Aún no hay clientes.</p>'}
+        <div class="row end" style="margin-top:10px"><button class="btn primary" data-act="new-client">＋ Nuevo cliente</button></div></div>
       <div class="card"><h2>Equipo</h2><p class="muted small">Las dos personas que usan Pulso. Cada cuenta y meta tiene un responsable.</p>
         <div class="form-grid"><label class="field">Persona 1<input id="p1" type="text" value="${esc(st.people[0] || '')}"></label><label class="field">Persona 2<input id="p2" type="text" value="${esc(st.people[1] || '')}"></label></div>
         <div class="row end" style="margin-top:10px"><button class="btn" data-act="save-people">Guardar</button></div></div>
@@ -972,6 +1057,7 @@
       title: preset.role === 'competidor' ? 'Agregar competidor' : 'Agregar cuenta',
       body: `<div class="form-grid">
         <label class="field">Plataforma<select name="platform">${Object.entries(M.PLATFORMS).map(([k, p]) => `<option value="${k}" ${k === (preset.platform || 'instagram') ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></label>
+        <label class="field">Cliente<select name="clientId"><option value="">Sin cliente</option>${S.state.clients.map(c => `<option value="${c.id}" ${c.id === (preset.clientId || ui.client) ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
         <label class="field">Es<select name="role"><option value="propia">Cuenta que manejo</option><option value="competidor" ${preset.role === 'competidor' ? 'selected' : ''}>Competidor</option></select></label>
         <label class="field">¿Cómo la medimos?<select name="source"><option value="public" ${preset.source !== 'api' ? 'selected' : ''}>Sin iniciar sesión (datos públicos)</option><option value="api" ${preset.source === 'api' ? 'selected' : ''}>Tengo acceso (Meta conectado o CSV)</option></select></label>
         <label class="field">Nombre<input name="name" type="text" placeholder="Ej.: Banco · Instagram"></label>
@@ -998,7 +1084,7 @@
           const platform = g('platform');
           const source = $('[name=source]', el).disabled ? 'api' : g('source');
           if (source === 'public' && !userOf(g('handle'))) { toast('Escribe el @usuario para poder medirla.', true); return; }
-          const acc = S.addAccount({ platform, name: g('name') || `${userOf(g('handle')) ? '@' + userOf(g('handle')) : M.PLATFORMS[platform].label} · ${M.PLATFORMS[platform].label}`, handle: g('handle'), owner: g('owner'), meta: {}, personal: platform === 'linkedin', role: g('role'), source });
+          const acc = S.addAccount({ platform, name: g('name') || `${userOf(g('handle')) ? '@' + userOf(g('handle')) : M.PLATFORMS[platform].label} · ${M.PLATFORMS[platform].label}`, handle: g('handle'), owner: g('owner'), meta: {}, personal: platform === 'linkedin', role: g('role'), source, clientId: g('clientId') || undefined });
           close();
           if (source === 'public') { go('cuenta', { accountId: acc.id, tab: 'metricas' }); syncAccount(acc); }
           else go('cuenta', { accountId: acc.id, tab: 'datos' });
@@ -1015,6 +1101,9 @@
   // ── Acciones ────────────────────────────────────────────────
   const ACTIONS = {
     'add-account': () => accountModal(),
+    'new-client': () => clientModal(),
+    'edit-client': b => { const c = S.client((b && b.dataset.id) || ui.client); if (c) clientModal(c); },
+    'open-client': b => { ui.client = b.dataset.id; P.setPref('client', ui.client); go('resumen'); },
     'add-competitor': () => accountModal({ role: 'competidor', source: 'public' }),
     'set-lupa': async b => { await P.setPref('lupaIgId', b.dataset.id); toast('Cuenta lupa actualizada.'); metaDiscover(); },
     'measure-all': async () => { for (const a of visibleAccounts().filter(x => x.source === 'public')) await syncAccount(a, null, true); toast('Mediciones actualizadas.'); },
@@ -1074,7 +1163,7 @@
       const g = n => { const el = $(`#acc-form [name=${n}]`); return el ? el.value.trim() : undefined; };
       const meta = Object.assign({}, a.meta);
       for (const k of ['igId', 'pageId', 'adAccountId']) if (g(k) !== undefined) meta[k] = g(k);
-      const patch = { name: g('name') || a.name, handle: g('handle'), owner: g('owner'), meta, role: g('role') || a.role };
+      const patch = { name: g('name') || a.name, handle: g('handle'), owner: g('owner'), meta, role: g('role') || a.role, clientId: g('clientId') || undefined };
       if (g('source') !== undefined) patch.source = g('source');
       S.updateAccount(a.id, patch);
       toast('Cuenta actualizada.'); render();
@@ -1142,6 +1231,7 @@
   });
   $('#view').addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.classList.contains('acc-card')) go('cuenta', { accountId: e.target.dataset.id });
+    if (e.key === 'Enter' && e.target.classList.contains('client-card')) ACTIONS['open-client'](e.target);
   });
 
   // ── Arranque ────────────────────────────────────────────────
@@ -1149,6 +1239,8 @@
     applyTheme(await P.getPref('theme'));
     try { ui.claudePath = await P.claudeCodePath(); } catch (e) { ui.claudePath = ''; }
     await S.load();
+    const savedClient = await P.getPref('client');
+    if (savedClient) ui.client = savedClient;
     const saved = await P.getPref('person');
     if (saved && (saved === 'Todos' || S.state.people.includes(saved))) ui.person = saved;
     render();

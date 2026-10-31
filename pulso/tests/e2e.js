@@ -39,6 +39,18 @@ const assert = require('node:assert/strict');
   await page.waitForTimeout(200);
   assert.ok(await page.locator('td', { hasText: '2030-01-01' }).count() > 0, 'la fila importada aparece');
 
+  // Clientes: tarjetas en "Todos" y al abrir uno todo se filtra
+  await page.click('[data-nav=resumen]');
+  assert.equal(await page.locator('.client-card').count(), 3);
+  await page.click('.client-card[data-id=demo_cli_banco]');
+  await page.waitForTimeout(150);
+  assert.equal(await page.textContent('#title'), 'Banco (demo)');
+  assert.equal(await page.locator('.acc-card').count(), 4, 'solo las cuentas propias del banco');
+  await page.click('[data-nav=comparativa]');
+  assert.equal(await page.locator('text=Marca · TikTok').count(), 0, 'la comparativa no mezcla clientes');
+  assert.ok(await page.locator('text=Competidor A · Instagram').count() > 0);
+  await page.selectOption('#client', 'todos');
+
   // Comparativa y alta de una cuenta pública (sin red: solo el formulario)
   await page.click('[data-nav=comparativa]');
   await page.waitForTimeout(150);

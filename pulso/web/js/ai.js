@@ -66,7 +66,8 @@ Estructura (usa estos encabezados con ###):
       for (const [k, v] of Object.entries(cmp.current)) if (v != null) metrics[k] = { valor: round(v), anterior: round(cmp.previous[k]), variacion: round(cmp.delta[k]), referencia: (M.grade(M.byKey[k], v, a.platform) || {}).label };
       const ci = A.contentInsights(state.posts[id] || []);
       out.cuentas.push({
-        nombre: a.name, plataforma: M.PLATFORMS[a.platform].label, responsable: a.owner, metricas: metrics,
+        nombre: a.name, cliente: ((state.clients || []).find(c => c.id === a.clientId) || {}).name || null, tipo: a.role === 'competidor' ? 'competidor' : 'propia',
+        plataforma: M.PLATFORMS[a.platform].label, responsable: a.owner, metricas: metrics,
         diagnostico_reglas: A.diagnose(a, rows, state.posts[id]).map(d => `${d.severity}: ${d.title} — ${d.detail}`),
         contenido: ci.n ? { publicaciones: ci.n, interaccion_promedio: round(ci.avgER), por_formato: ci.byType.map(t => ({ formato: t.key, n: t.n, interaccion: round(t.er), alcance_prom: Math.round(t.avgReach) })),
           por_dia: ci.byWeekday.map(t => ({ dia: t.key, n: t.n, interaccion: round(t.er) })), top: ci.top.map(p => ({ fecha: p.date, formato: p.type, texto: p.caption, alcance: p.reach, interaccion: round(p.er), guardados: p.saves, compartidos: p.shares })) } : null,
