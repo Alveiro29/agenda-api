@@ -602,17 +602,51 @@
   }
 
   /* TikTok: el perfil público trae un JSON con los contadores */
-  function parseTikTokProfile(html) {
-    const m = String(html || '').match(/<script[^>]+id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
-    if (!m) return null;
-    let j; try { j = JSON.parse(m[1]); } catch (e) { return null; }
-    const d = j && j.__DEFAULT_SCOPE__ && j.__DEFAULT_SCOPE__['webapp.user-detail'];
-    const info = d && d.userInfo;
-    if (!info || !info.stats) return null;
-    const st = info.statsV2 || info.stats;
-    const n = v => (v == null ? null : Number(v));
-    return { username: info.user && info.user.uniqueId, name: info.user && info.user.nickname,
-             followers: n(st.followerCount), hearts: n(st.heartCount ?? st.heart), videos: n(st.videoCount) };
+  /* TikTok cambia seguido cómo entrega el perfil. Se prueba, en orden:
+     1) el JSON actual (__UNIVERSAL_DATA_FOR_REHYDRATION__),
+     2) el formato anterior (SIGI_STATE),
+     3) buscar los contadores en el HTML, cerca del @usuario (sirve
+        también para la página de "embed" del perfil). */
+  function parseTikTokProfile(html, username) {
+    const src = String(html || '');
+    const n = v => (v == null || v === '' ? null : Number(v));
+    const out = (u, nick, st) => (st && st.followerCount != null ? { username: u, name: nick, followers: n(st.followerCount), hearts: n(st.heartCount ?? st.heart ?? st.diggCount), videos: n(st.videoCount) } : null);
+    const script = id => { const m = src.match(new RegExp(`<script[^>]+id="${id}"[^>]*>([\\s\\S]*?)<\\/script>`)); if (!m) return null; try { return JSON.parse(m[1]); } catch (e) { return null; } };
+
+    const uni = script('__UNIVERSAL_DATA_FOR_REHYDRATION__');
+    const info = uni && uni.__DEFAULT_SCOPE__ && uni.__DEFAULT_SCOPE__['webapp.user-detail'] && uni.__DEFAULT_SCOPE__['webapp.user-detail'].userInfo;
+    if (info && (info.statsV2 || info.stats)) { const r = out(info.user && info.user.uniqueId, info.user && info.user.nickname, info.statsV2 || info.stats); if (r) return r; }
+
+    const sigi = script('SIGI_STATE');
+    if (sigi && sigi.UserModule) {
+      const users = sigi.UserModule.users || {}, stats = sigi.UserModule.stats || {};
+      const key = Object.keys(users).find(k => !username || k.toLowerCase() === String(username).toLowerCase()) || Object.keys(users)[0];
+      if (key) { const r = out(users[key].uniqueId || key, users[key].nickname, stats[key]); if (r) return r; }
+    }
+
+    // Último recurso: contadores en el HTML, a partir de donde aparece el usuario
+    let from = 0;
+    if (username) {
+      const i = src.toLowerCase().indexOf(`"uniqueid":"${String(username).toLowerCase()}"`);
+      if (i >= 0) from = i; // los contadores vienen después del usuario; antes puede haber otras cuentas
+    }
+    const part = src.slice(from);
+    const num = k => { const m = part.match(new RegExp(`"${k}"\\s*:\\s*"?(\\d+)`)); return m ? Number(m[1]) : null; };
+    const followers = num('followerCount');
+    if (followers == null) return null;
+    return { username: username || null, name: null, followers, hearts: num('heartCount') ?? num('heart'), videos: num('videoCount') };
+  }
+
+  /* Describe qué devolvió TikTok cuando no hay datos (para el aviso) */
+  function tiktokBlockReason(res) {
+    if (!res) return 'sin respuesta';
+    if (res.status === 404) return 'el usuario no existe (HTTP 404)';
+    if (res.status && res.status !== 200) return `TikTok respondió HTTP ${res.status}`;
+    const b = String(res.body || '');
+    if (/captcha|verify|verificaci/i.test(b) && b.length < 60000) return 'TikTok pidió verificación (captcha)';
+    if (/"statusCode"\s*:\s*10221|"statusCode"\s*:\s*10222/.test(b)) return 'la cuenta es privada o TikTok limitó la consulta';
+    if (b.length < 3000) return 'TikTok devolvió una página vacía';
+    return 'la página no traía los contadores';
   }
 
   /* TikTok solo da totales: la diferencia con la medición anterior son
@@ -629,7 +663,7 @@
   }
 
   const api = { parseCSV, parseNumber, parseDate, detectDayFirst, mapHeaders, importCSV, adaptRows, MetaClient, actionSum, HEADER_MAP,
-                normalizeInstagramPublic, instagramPublicToData, parseTikTokProfile, tiktokPublicToRows };
+                normalizeInstagramPublic, instagramPublicToData, parseTikTokProfile, tiktokBlockReason, tiktokPublicToRows };
   root.PulsoConnectors = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

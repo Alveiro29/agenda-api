@@ -1060,9 +1060,27 @@
       return { followers: pub.followers, posts: pub.posts.length, via };
     }
     if (a.platform === 'tiktok') {
-      const r = await P.http(`https://www.tiktok.com/@${encodeURIComponent(user)}`, { headers: { 'User-Agent': SAFARI_UA, 'Accept': 'text/html', 'Accept-Language': 'es-DO,es;q=0.9' } });
-      const st = r.ok ? C.parseTikTokProfile(r.body) : null;
-      if (!st || st.followers == null) throw new Error('TikTok no devolvió los datos del perfil (a veces pide verificación). Intenta más tarde o anota los números a mano en Registro manual.');
+      // Varios intentos: el perfil (la 2.ª vez ya con las cookies que puso TikTok),
+      // la versión móvil y la página de "embed" del creador.
+      const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+      const u = encodeURIComponent(user);
+      const attempts = [
+        [`https://www.tiktok.com/@${u}`, SAFARI_UA], [`https://www.tiktok.com/@${u}`, SAFARI_UA],
+        [`https://www.tiktok.com/@${u}?lang=es`, MOBILE_UA], [`https://www.tiktok.com/embed/@${u}`, SAFARI_UA],
+      ];
+      let st = null, last = null;
+      for (const [url, ua] of attempts) {
+        try {
+          last = await P.http(url, { headers: { 'User-Agent': ua, 'Accept': 'text/html,application/xhtml+xml', 'Accept-Language': 'es-DO,es;q=0.9,en;q=0.8' } });
+          if (last.status === 404) break;
+          st = last.ok ? C.parseTikTokProfile(last.body, user) : null;
+          if (st && st.followers != null) break;
+        } catch (e) { last = { status: 0, body: '', error: e.message }; }
+      }
+      if (!st || st.followers == null) {
+        const why = last && last.error ? last.error : C.tiktokBlockReason(last);
+        throw new Error(`No pude leer @${user} en TikTok: ${why}. Revisa que el @usuario esté bien escrito (Datos → Configuración). Mientras tanto puedes anotar seguidores y me gusta en Registro manual, o importar el CSV de TikTok Studio.`);
+      }
       S.upsertRows(a.id, C.tiktokPublicToRows(st, S.rows(a.id), t));
       const via = 'perfil web público';
       S.updateAccount(a.id, { lastPublic: { at: Date.now(), via } });

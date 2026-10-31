@@ -349,3 +349,15 @@ test('meta sin historial suficiente: no proyecta ni sugiere pauta', () => {
   assert.notEqual(p2.status, 'sin_datos');
   close(p2.pacePerDay, 50, 1e-6);
 });
+
+test('TikTok: lee el formato SIGI_STATE y, como último recurso, los contadores del HTML', () => {
+  const sigi = { UserModule: { users: { banco: { uniqueId: 'banco', nickname: 'Banco' } }, stats: { banco: { followerCount: 900, heartCount: 12000, videoCount: 33 } } } };
+  const html1 = `<script id="SIGI_STATE" type="application/json">${JSON.stringify(sigi)}</script>`;
+  assert.deepEqual(C.parseTikTokProfile(html1, 'banco'), { username: 'banco', name: 'Banco', followers: 900, hearts: 12000, videos: 33 });
+  const html2 = `<div>{"uniqueId":"otro","followerCount":5}</div>...<script>{"uniqueId":"banco","nickname":"B","stats":{"followerCount":4100,"heartCount":"88000","videoCount":12}}</script>`;
+  const r = C.parseTikTokProfile(html2, 'banco');
+  assert.equal(r.followers, 4100);
+  assert.equal(r.hearts, 88000);
+  assert.equal(C.tiktokBlockReason({ status: 404, body: '' }), 'el usuario no existe (HTTP 404)');
+  assert.equal(C.tiktokBlockReason({ status: 200, body: 'x' }), 'TikTok devolvió una página vacía');
+});
