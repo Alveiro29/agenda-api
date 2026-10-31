@@ -144,7 +144,7 @@ label.field span.hint { font-weight: 400; color: var(--muted); }
 .badge.great, .badge.good, .badge.logrado, .badge.en_ruta, .badge.bien, .badge.pass { background: var(--good-bg); color: var(--good); }
 .badge.ok, .badge.en_riesgo, .badge.media, .badge.warn, .badge.high { background: var(--warn-bg); color: var(--warn); }
 .badge.low, .badge.fuera_de_ruta, .badge.vencido, .badge.alta, .badge.fail { background: var(--bad-bg); color: var(--bad); }
-.badge.baja, .badge.info { background: var(--info-bg); color: var(--text-2); }
+.badge.baja, .badge.info, .badge.sin_datos { background: var(--info-bg); color: var(--text-2); }
 .plat { display: inline-grid; place-items: center; min-width: 28px; height: 20px; padding: 0 6px; border-radius: 6px; color: #fff; font-size: 10.5px; font-weight: 700; }
 .acc-card { cursor: default; transition: border-color .15s; }
 .acc-card:hover { border-color: var(--accent); }

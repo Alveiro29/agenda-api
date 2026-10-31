@@ -125,6 +125,7 @@
   }
 
   // ── Metas ───────────────────────────────────────────────────
+  const MIN_HISTORY_DAYS = 7;
   /* goal: { metric, target, baseline?, startDate, deadline, accountId, adsAccountId? }
      Devuelve estado, ritmo actual vs. necesario, proyección a la fecha
      límite y — si va atrasada — cuánto presupuesto haría falta para
@@ -187,11 +188,22 @@
     const gap = current != null ? target - current : null;
     const requiredPerDay = gap != null && remaining > 0 ? gap / remaining : null;
     const achieved = current != null && (lower ? current <= target : current >= target);
-    const willReach = projected != null && (lower ? projected <= target : projected >= target);
+    let willReach = projected != null && (lower ? projected <= target : projected >= target);
     const expected = elapsed / totalDays;
+
+    /* Sin al menos una semana de historial no hay ritmo confiable (típico
+       de una cuenta medida sin sesión recién agregada): no se proyecta ni
+       se sugiere pauta todavía. */
+    // Metas de saldo (seguidores): cuentan solo los días con ese dato; las demás, cualquier día con datos
+    const hasData = m.goal === 'level' ? r => safe(() => m.compute(summarize([r], r.date, r.date))) != null : () => true;
+    const recent = sorted.filter(r => r.date >= addDays(now, -27) && r.date <= now && hasData(r));
+    const historyDays = recent.length ? diffDays(recent[0].date, recent[recent.length - 1].date) + 1 : 0;
+    const enoughHistory = historyDays >= MIN_HISTORY_DAYS;
+    if (!enoughHistory) { projected = null; pacePerDay = null; willReach = false; }
 
     let status;
     if (achieved) status = 'logrado';
+    else if (!enoughHistory) status = 'sin_datos';
     else if (remaining === 0) status = 'vencido';
     else if (willReach) status = 'en_ruta';
     else if (progress != null && progress >= expected * 0.75) status = 'en_riesgo';
@@ -199,9 +211,9 @@
 
     // La publicidad cubre solo lo que el ritmo orgánico no alcanza a la fecha límite
     const shortfall = projected != null && m.goal !== 'rate' ? target - projected : gap;
-    const adPlan = !achieved && !willReach && remaining > 0 ? adBoost(goal, m, lower ? null : shortfall, adsRows || rows, now) : null;
+    const adPlan = !achieved && enoughHistory && !willReach && remaining > 0 ? adBoost(goal, m, lower ? null : shortfall, adsRows || rows, now) : null;
     return { metric: m, current, baseline, target, progress, expected, gap, pacePerDay, requiredPerDay,
-             projected, remaining, elapsed, totalDays, status, adPlan, lower };
+             projected, remaining, elapsed, totalDays, status, adPlan, lower, historyDays, minHistory: MIN_HISTORY_DAYS };
   }
 
   /* Anclar la meta a publicidad: cuánto costaría cerrar la brecha

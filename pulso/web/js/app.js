@@ -398,7 +398,7 @@
   }
 
   // ── Metas ───────────────────────────────────────────────────
-  const STATUS = { logrado: 'Lograda', en_ruta: 'En ruta', en_riesgo: 'En riesgo', fuera_de_ruta: 'Fuera de ruta', vencido: 'Vencida' };
+  const STATUS = { logrado: 'Lograda', en_ruta: 'En ruta', en_riesgo: 'En riesgo', fuera_de_ruta: 'Fuera de ruta', vencido: 'Vencida', sin_datos: 'Midiendo' };
   function goalCalc(g) {
     const a = S.account(g.accountId); if (!a) return null;
     return A.goalProgress(g, S.rows(a.id), a.platform, today() > (A.latestDate(S.rows(a.id)) || today()) ? A.latestDate(S.rows(a.id)) : today(), adsRows());
@@ -417,7 +417,7 @@
       v.innerHTML = `<div class="empty"><h2>Sin metas todavía</h2><p>Define qué quieres lograr (ej. 1.500 leads en 60 días, 25K seguidores, +40% de alcance) y Pulso te dirá si vas en ruta, a qué ritmo y cuánto presupuesto haría falta para cerrar la brecha.</p><button class="btn primary" data-act="new-goal">Crear la primera meta</button></div>`;
       return;
     }
-    const order = { fuera_de_ruta: 0, en_riesgo: 1, vencido: 2, en_ruta: 3, logrado: 4 };
+    const order = { fuera_de_ruta: 0, en_riesgo: 1, vencido: 2, sin_datos: 3, en_ruta: 4, logrado: 5 };
     const list = goals.map(g => ({ g, p: goalCalc(g) })).filter(x => x.p).sort((a, b) => order[a.p.status] - order[b.p.status]);
     v.innerHTML = `<div class="grid two">${list.map(({ g, p }) => goalCard(g, p)).join('')}</div>`;
   }
@@ -444,6 +444,8 @@
         ${ad.budget != null ? `<div class="row"><div><div class="muted small">Presupuesto para cerrar la brecha</div><b style="font-size:18px">${M.format(ad.budget, 'money')}</b> <span class="muted">≈ ${M.format(ad.perDay, 'money')}/día por ${ad.days} días</span></div></div>
         <div class="small" style="margin-top:6px"><b>Objetivo de campaña:</b> ${esc(ad.objective)}</div><div class="small muted">${esc(ad.how)}${ad.costs && !ad.costs.real ? ' · costos de referencia (conecta Meta Ads para usar los tuyos)' : ''}</div>`
         : `<div class="small">${esc(ad.how)}</div>`}</div>` : ''}
+      ${p.status === 'sin_datos' ? `<div class="ad-plan"><h4>⏳ Juntando historial (${p.historyDays}/${p.minHistory} días)</h4><div class="small muted">Para calcular el ritmo y saber si hace falta pauta, Pulso necesita al menos ${p.minHistory} días de datos de esta cuenta.${a.source === 'public' ? ' Como se mide sin iniciar sesión, cada día que abres Pulso suma una medición.' : ' Sincroniza o importa más días para tenerlo antes.'}</div></div>` : ''}
+      ${p.status === 'en_ruta' && !p.lower ? `<div class="ad-plan" style="border-color:var(--good)"><h4>✅ No necesitas pauta para esta meta</h4><div class="small muted">Al ritmo actual cierras en ${fmtM(g.metric, p.projected)}${p.projected != null && g.target ? `, ${fmtM(g.metric, Math.abs(p.projected - g.target))} por encima de la meta` : ''}. Si quieres llegar antes o con más margen, sube la meta o impulsa los posts con mejor interacción.</div></div>` : ''}
       <div class="row end" style="margin-top:12px"><button class="btn sm" data-act="edit-goal" data-id="${g.id}">Editar</button><button class="btn sm danger" data-act="del-goal" data-id="${g.id}">Eliminar</button></div>
     </div>`;
   }

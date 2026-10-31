@@ -333,3 +333,19 @@ test('sugiere clientes agrupando las cuentas existentes por marca', () => {
   assert.equal(byAcc('k1').name, 'Dra. Katherin Almonte Skin Lab');
   assert.ok(byAcc('c1'), 'el competidor queda sugerido en algún cliente');
 });
+
+test('meta sin historial suficiente: no proyecta ni sugiere pauta', () => {
+  // Cuenta medida sin sesión: posts viejos con me gusta, pero seguidores solo de hoy
+  const rows = [{ date: '2026-10-10', posts: 1, likes: 50 }, { date: '2026-10-31', followers: 86400 }];
+  const g = { metric: 'followers', target: 93400, startDate: '2026-10-31', deadline: '2027-01-29' };
+  const p = A.goalProgress(g, rows, 'instagram', '2026-10-31', []);
+  assert.equal(p.status, 'sin_datos');
+  assert.equal(p.adPlan, null);
+  assert.equal(p.projected, null);
+  assert.equal(p.historyDays, 1);
+  // Con una semana de mediciones ya calcula el ritmo
+  const week = Array.from({ length: 8 }, (_, i) => ({ date: A.addDays('2026-10-24', i), followers: 86000 + i * 50 }));
+  const p2 = A.goalProgress(g, week, 'instagram', '2026-10-31', []);
+  assert.notEqual(p2.status, 'sin_datos');
+  close(p2.pacePerDay, 50, 1e-6);
+});
