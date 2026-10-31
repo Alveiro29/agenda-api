@@ -12,6 +12,24 @@ const assert = require('node:assert/strict');
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto('file://' + path.join(__dirname, '..', 'web', 'index.html'));
 
+  // Cuentas creadas antes de existir los clientes: el asistente las organiza solo
+  await page.evaluate(() => {
+    const S = PulsoApp.S;
+    S.addAccount({ platform: 'facebook', name: 'Banco Ademi', meta: { pageId: '11' } });
+    S.addAccount({ platform: 'instagram', name: '@bancoademi', handle: '@bancoademi' });
+    S.addAccount({ platform: 'instagram', name: '@drakatherin', handle: '@drakatherin' });
+    S.addAccount({ platform: 'facebook', name: 'Dra Katherin Almonte', meta: { pageId: '22' } });
+  });
+  await page.click('[data-nav=ajustes]');
+  await page.click('[data-act=organize]');
+  assert.equal(await page.locator('#org-names input').count(), 2, 'propone 2 clientes');
+  await page.click('[data-save]');
+  await page.waitForTimeout(150);
+  assert.equal(await page.locator('.client-card').count(), 2);
+  for (const id of await page.evaluate(() => PulsoApp.S.state.accounts.map(a => a.id))) await page.evaluate(i => PulsoApp.S.removeAccount(i), id);
+  for (const id of await page.evaluate(() => PulsoApp.S.state.clients.map(c => c.id))) await page.evaluate(i => PulsoApp.S.removeClient(i), id);
+  await page.click('[data-nav=resumen]');
+
   await page.click('text=Ver con datos de demostración');
   await page.waitForSelector('.acc-card');
   assert.equal(await page.locator('.acc-card').count(), 6);

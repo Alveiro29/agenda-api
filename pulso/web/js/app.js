@@ -137,6 +137,59 @@
     if (ui.view === 'cuenta' && !visibleAccounts().some(a => a.id === ui.accountId)) ui.view = 'resumen';
     render();
   });
+  /* Asistente: propone los clientes a partir de las cuentas que ya
+     existen y las asigna con un clic. No crea ni borra cuentas. */
+  function organizeModal(auto) {
+    const pending = S.state.accounts.filter(a => !a.clientId || !S.client(a.clientId));
+    if (!pending.length) { if (!auto) toast('Todas las cuentas ya tienen cliente.'); return; }
+    const sug = window.PulsoStore.suggestClients(S.state);
+    const existing = S.state.clients.map(c => ({ key: 'c:' + c.id, name: c.name, fixed: true }));
+    const groups = existing.concat(sug.map((g, i) => ({ key: 'n:' + i, name: g.name, ids: g.accountIds })));
+    const groupOf = id => { const g = groups.find(x => x.ids && x.ids.includes(id)); return g ? g.key : ''; };
+    const opts = sel => `<option value="">Sin cliente</option>` + groups.map(g => `<option value="${g.key}" ${g.key === sel ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+    modal({
+      title: 'Organizar cuentas por cliente', wide: true,
+      body: `<p class="muted small">Pulso agrupó tus cuentas actuales según su nombre y @usuario. <b>No se crean ni se borran cuentas</b>: solo se les asigna su cliente. Corrige lo que haga falta y pulsa Aplicar.</p>
+        <h3>Clientes</h3>
+        <div class="form-grid" id="org-names">${groups.filter(g => !g.fixed).map(g => `<label class="field">Nombre del cliente<input type="text" data-key="${g.key}" value="${esc(g.name)}"></label>`).join('')}</div>
+        <h3 style="margin-top:6px">Cuentas</h3>
+        <div class="table-wrap"><table><tbody>${pending.map(a => `<tr><td>${platBadge(a.platform)} ${esc(a.name)}${a.role === 'competidor' ? ' <span class="badge warn">competidor</span>' : ''}</td>
+          <td class="r"><select data-acc="${a.id}">${opts(groupOf(a.id))}</select></td></tr>`).join('')}</tbody></table></div>`,
+      footer: `<button class="btn" data-close>${auto ? 'Ahora no' : 'Cancelar'}</button><button class="btn primary" data-save>Aplicar</button>`,
+      onMount(el, close) {
+        // Renombrar un cliente actualiza los menús de abajo
+        $$('#org-names input', el).forEach(inp => inp.addEventListener('input', () => {
+          $$(`option[value="${inp.dataset.key}"]`, el).forEach(o => { o.textContent = inp.value || '(sin nombre)'; });
+        }));
+        $$('[data-close]', el).forEach(b => b.addEventListener('click', () => { if (auto) P.setPref('orgDismissed', '1'); }));
+        $('[data-save]', el).addEventListener('click', () => {
+          const created = {};
+          let n = 0;
+          const used = new Set();
+          for (const sel of $$('select[data-acc]', el)) {
+            const key = sel.value;
+            if (!key) continue;
+            let cid;
+            if (key.startsWith('c:')) cid = key.slice(2);
+            else {
+              if (!created[key]) {
+                const name = ($(`#org-names input[data-key="${key}"]`, el) || {}).value || 'Cliente';
+                created[key] = S.addClient({ name: name.trim() || 'Cliente', color: CLIENT_COLORS[S.state.clients.length % CLIENT_COLORS.length] }).id;
+              }
+              cid = created[key];
+            }
+            const acc = S.account(sel.dataset.acc);
+            if (acc) { acc.clientId = cid; acc.updatedAt = Date.now(); n++; used.add(cid); }
+          }
+          S.save(true);
+          P.setPref('orgDismissed', '1');
+          close(); ui.client = 'todos'; go('resumen');
+          toast(`${n} cuenta(s) organizadas en ${used.size} cliente(s).`);
+        });
+      },
+    });
+  }
+
   function clientModal(existing) {
     modal({
       title: existing ? 'Editar cliente' : 'Nuevo cliente',
@@ -914,7 +967,7 @@
     v.innerHTML = `<div class="grid two">
       <div class="card"><h2>Clientes</h2><p class="muted small">Cada cliente es un espacio aparte: sus cuentas, competidores, metas y resumen. Asigna cada cuenta a su cliente en Datos e importación → Configuración.</p>
         ${S.state.clients.map(c => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)"><span style="width:12px;height:12px;border-radius:3px;background:${c.color}"></span><b style="flex:1">${esc(c.name)}</b><span class="muted small">${S.state.accounts.filter(a => a.clientId === c.id).length} cuentas</span><button class="btn sm" data-act="edit-client" data-id="${c.id}">Editar</button></div>`).join('') || '<p class="muted">Aún no hay clientes.</p>'}
-        <div class="row end" style="margin-top:10px"><button class="btn primary" data-act="new-client">＋ Nuevo cliente</button></div></div>
+        <div class="row end" style="margin-top:10px">${S.state.accounts.some(a => !a.clientId || !S.client(a.clientId)) ? '<button class="btn" data-act="organize">Organizar cuentas sin cliente…</button>' : ''}<button class="btn primary" data-act="new-client">＋ Nuevo cliente</button></div></div>
       <div class="card"><h2>Equipo</h2><p class="muted small">Las dos personas que usan Pulso. Cada cuenta y meta tiene un responsable.</p>
         <div class="form-grid"><label class="field">Persona 1<input id="p1" type="text" value="${esc(st.people[0] || '')}"></label><label class="field">Persona 2<input id="p2" type="text" value="${esc(st.people[1] || '')}"></label></div>
         <div class="row end" style="margin-top:10px"><button class="btn" data-act="save-people">Guardar</button></div></div>
@@ -1107,6 +1160,7 @@
   const ACTIONS = {
     'add-account': () => accountModal(),
     'new-client': () => clientModal(),
+    'organize': () => organizeModal(false),
     'edit-client': b => { const c = S.client((b && b.dataset.id) || ui.client); if (c) clientModal(c); },
     'open-client': b => { ui.client = b.dataset.id; P.setPref('client', ui.client); go('resumen'); },
     'add-competitor': () => accountModal({ role: 'competidor', source: 'public' }),
@@ -1254,6 +1308,8 @@
     applyTheme(await P.getPref('theme'));
     try { ui.claudePath = await P.claudeCodePath(); } catch (e) { ui.claudePath = ''; }
     await S.load();
+    // Primera vez con clientes: proponer la organización de las cuentas que ya existen
+    if (!(await P.getPref('orgDismissed')) && S.state.accounts.some(a => !a.demo && (!a.clientId || !S.client(a.clientId)))) setTimeout(() => organizeModal(true), 400);
     if (S.lastDeduped) setTimeout(() => toast(`Se unieron ${S.lastDeduped} cuenta(s) duplicada(s) sin perder datos.`), 600);
     const savedClient = await P.getPref('client');
     if (savedClient) ui.client = savedClient;

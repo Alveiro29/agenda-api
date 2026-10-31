@@ -140,6 +140,52 @@
     return merged;
   }
 
+  // ── Organizar por clientes (sugerencia automática) ──────────
+  /* Agrupa las cuentas sin cliente que pertenecen a la misma marca:
+     comparten una palabra significativa en el nombre o el @usuario
+     ("Banco Ademi" ↔ "@bancoademi", "Dra. Katherin" ↔ "katherinalmonte.skin").
+     Los competidores van con el cliente de la cuenta propia creada más
+     cerca en el tiempo (normalmente se agregaron juntos). */
+  const GENERIC = new Set(['instagram', 'facebook', 'tiktok', 'linkedin', 'meta', 'ads', 'anuncios', 'captacion', 'cuenta', 'oficial',
+    'official', 'pagina', 'page', 'www', 'http', 'https', 'com', 'net', 'org', 'demo', 'marca', 'sitio', 'web', 'store', 'shop', 'tienda',
+    'banco', 'clinica', 'grupo', 'the', 'los', 'las', 'del', 'para', 'competidor', 'perfil']);
+  const fold = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  function brandTokens(a) {
+    const words = fold(`${a.name || ''} ${a.handle || ''}`).replace(/https?:\/\/[^/]+\//g, ' ').split(/[^a-z0-9]+/);
+    return [...new Set(words.filter(w => w.length >= 4 && !GENERIC.has(w) && !/^\d+$/.test(w)))];
+  }
+  const compact = a => fold(`${a.name || ''}${a.handle || ''}`).replace(/[^a-z0-9]/g, '');
+  const cleanName = n => String(n || '').replace(/\s*[·|\-–]\s*(instagram|facebook|tiktok|linkedin|meta ads|ads|sitio web|web).*$/i, '').replace(/^@/, '').trim();
+
+  function suggestClients(state) {
+    const pending = state.accounts.filter(a => !a.clientId || !state.clients.some(c => c.id === a.clientId));
+    const own = pending.filter(a => a.role !== 'competidor');
+    const parent = new Map(own.map(a => [a.id, a.id]));
+    const find = x => (parent.get(x) === x ? x : (parent.set(x, find(parent.get(x))), parent.get(x)));
+    const shares = (a, b) => brandTokens(a).some(t => compact(b).includes(t)) || brandTokens(b).some(t => compact(a).includes(t));
+    for (let i = 0; i < own.length; i++) for (let j = i + 1; j < own.length; j++) if (shares(own[i], own[j])) parent.set(find(own[i].id), find(own[j].id));
+    const groups = new Map();
+    for (const a of own) { const r = find(a.id); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(a); }
+    const out = [...groups.values()].map(list => {
+      const fb = list.find(a => a.platform === 'facebook') || list.find(a => a.platform !== 'linkedin') || list[0];
+      let name = cleanName(fb.name) || fb.handle || 'Cliente';
+      if (list.length === 1 && list[0].platform === 'linkedin' && list[0].personal) name = `${cleanName(list[0].name) || 'Mi'} (personal)`;
+      return { name, accountIds: list.map(a => a.id), createdAt: Math.min(...list.map(a => a.createdAt || 0)) };
+    }).sort((x, y) => x.createdAt - y.createdAt);
+    // Competidores: al grupo con la cuenta propia más cercana en fecha de creación
+    for (const c of pending.filter(a => a.role === 'competidor')) {
+      let best = null, bestD = Infinity;
+      for (const g of out) for (const id of g.accountIds) {
+        const a = state.accounts.find(x => x.id === id);
+        if (!a || a.role === 'competidor') continue;
+        const d = Math.abs((a.createdAt || 0) - (c.createdAt || 0));
+        if (d < bestD) { bestD = d; best = g; }
+      }
+      if (best) best.accountIds.push(c.id);
+    }
+    return out;
+  }
+
   const uid = (p = 'id') => p + '_' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 
   function Store(platform) {
@@ -257,7 +303,7 @@
     return api;
   }
 
-  const api = { Store, merge, normalize, empty, uid, accountKeys, findDuplicate, dedupeAccounts, handleKey };
+  const api = { Store, merge, normalize, empty, uid, accountKeys, findDuplicate, dedupeAccounts, handleKey, suggestClients };
   root.PulsoStore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

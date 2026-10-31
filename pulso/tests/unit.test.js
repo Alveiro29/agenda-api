@@ -312,3 +312,24 @@ test('une duplicados existentes sin perder datos', () => {
   assert.equal(st.goals[0].accountId, 'old');
   assert.ok(st.deleted.new);
 });
+
+test('sugiere clientes agrupando las cuentas existentes por marca', () => {
+  const st = S.empty();
+  st.accounts = [
+    { id: 'k1', platform: 'instagram', name: '@drakatherinalmonte', handle: '@drakatherinalmonte', createdAt: 1 },
+    { id: 'a1', platform: 'facebook', name: 'Banco Ademi', meta: { pageId: '1' }, createdAt: 2 },
+    { id: 'a2', platform: 'instagram', name: '@bancoademi', handle: '@bancoademi', createdAt: 3 },
+    { id: 'k2', platform: 'facebook', name: 'Dra. Katherin Almonte Skin Lab', meta: { pageId: '2' }, createdAt: 4 },
+    { id: 'c1', platform: 'instagram', name: '@bancopopular', handle: '@bancopopular', role: 'competidor', source: 'public', createdAt: 5 },
+    { id: 'a3', platform: 'meta_ads', name: 'Ademi Ads', meta: { adAccountId: '9' }, createdAt: 6 },
+  ];
+  const g = S.suggestClients(st);
+  const byAcc = id => g.find(x => x.accountIds.includes(id));
+  assert.equal(byAcc('a1'), byAcc('a2'));
+  assert.equal(byAcc('a1'), byAcc('a3'));
+  assert.equal(byAcc('k1'), byAcc('k2'));
+  assert.notEqual(byAcc('a1'), byAcc('k1'));
+  assert.equal(byAcc('a1').name, 'Banco Ademi');
+  assert.equal(byAcc('k1').name, 'Dra. Katherin Almonte Skin Lab');
+  assert.ok(byAcc('c1'), 'el competidor queda sugerido en algún cliente');
+});
