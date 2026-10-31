@@ -522,7 +522,7 @@
         <div class="row end" style="margin-top:10px"><button class="btn" data-act="manual-save">Guardar día</button></div></div>
     </div>
     ${linked ? `<div class="card section"><div class="row"><div><h2>Meta conectada</h2><div class="muted small">${a.meta.igId ? 'Instagram ' + esc(a.meta.igId) : ''} ${a.meta.pageId ? 'Página ' + esc(a.meta.pageId) : ''} ${a.meta.adAccountId ? 'Cuenta publicitaria ' + esc(a.meta.adAccountId) : ''}${a.lastSync ? ' · última sincronización ' + new Date(a.lastSync).toLocaleString('es-DO') : ''}</div></div><span class="spacer"></span>
-      <select id="sync-days"><option value="30">30 días</option><option value="60">60 días</option><option value="90" selected>90 días</option></select><button class="btn primary" data-act="sync" data-id="${a.id}">↻ Sincronizar ahora</button></div></div>` : ''}
+      <select id="sync-days" title="Cuántos días traer"><option value="" selected>Solo lo nuevo</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días (completo)</option></select><button class="btn primary" data-act="sync" data-id="${a.id}">↻ Sincronizar ahora</button></div></div>` : ''}
     <div class="card section"><div class="section-h"><h2>Últimos días cargados</h2><span class="muted small">${rows.length} días en total${rows.length ? ` · ${esc(rows[0].date)} → ${esc(rows[rows.length - 1].date)}` : ''}</span></div>
       ${last.length ? `<div class="table-wrap"><table><thead><tr><th>Fecha</th>${cols.map(f => `<th class="r">${esc(label(f))}</th>`).join('')}<th></th></tr></thead><tbody>
       ${last.map(r => `<tr><td>${esc(r.date)}</td>${cols.map(f => `<td class="r">${f === 'position' ? (r.positionSum && r.searchImpressions ? (r.positionSum / r.searchImpressions).toFixed(1) : '—') : r[f] != null ? (f === 'spend' ? M.format(r[f], 'money') : M.compact(r[f])) : '—'}</td>`).join('')}<td class="r"><button class="btn sm ghost" data-act="del-row" data-date="${r.date}" aria-label="Borrar ${r.date}">✕</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">Sin datos.</p>'}</div>
@@ -931,7 +931,16 @@
     throw new Error('La medición pública está disponible para Instagram y TikTok. Para Facebook usa el registro manual o el CSV.');
   }
 
-  async function syncAccount(a, days = 90, quiet = false) {
+  /* Primera vez: 90 días. Después solo lo nuevo desde el último día
+     guardado (+3 días de margen, porque Meta corrige cifras recientes). */
+  function syncWindow(a) {
+    const last = A.latestDate(S.rows(a.id));
+    if (!last) return 90;
+    return Math.min(90, Math.max(7, A.diffDays(last, today()) + 3));
+  }
+
+  async function syncAccount(a, days = null, quiet = false) {
+    if (!days) days = syncWindow(a);
     if (ui.syncing[a.id]) return;
     ui.syncing[a.id] = true; if (ui.view === 'cuenta') render();
     try {
@@ -1008,7 +1017,7 @@
     'add-account': () => accountModal(),
     'add-competitor': () => accountModal({ role: 'competidor', source: 'public' }),
     'set-lupa': async b => { await P.setPref('lupaIgId', b.dataset.id); toast('Cuenta lupa actualizada.'); metaDiscover(); },
-    'measure-all': async () => { for (const a of visibleAccounts().filter(x => x.source === 'public')) await syncAccount(a, 90, true); toast('Mediciones actualizadas.'); },
+    'measure-all': async () => { for (const a of visibleAccounts().filter(x => x.source === 'public')) await syncAccount(a, null, true); toast('Mediciones actualizadas.'); },
     'go-settings': () => go('ajustes'),
     'go-goals': () => go('metas'),
     'go-diag': () => { const a = visibleAccounts()[0]; if (a) go('cuenta', { accountId: a.id, tab: 'diagnostico' }); },
@@ -1022,8 +1031,8 @@
     'open-url': (b, e) => { e && e.preventDefault(); P.openExternal(b.dataset.url); },
     'demo-load': () => { D.apply(S.state); S.save(true); toast('Datos de demostración cargados.'); go('resumen'); },
     'demo-remove': () => { D.remove(S.state); S.save(true); toast('Demo eliminada.'); render(); },
-    'sync': b => { const a = S.account(b.dataset.id); const d = $('#sync-days'); syncAccount(a, d ? +d.value : 90); },
-    'sync-all': async () => { for (const a of visibleAccounts().filter(canMeasure)) await syncAccount(a, 90, a.source === 'public'); },
+    'sync': b => { const a = S.account(b.dataset.id); const d = $('#sync-days'); syncAccount(a, d && d.value ? +d.value : null); },
+    'sync-all': async () => { for (const a of visibleAccounts().filter(canMeasure)) await syncAccount(a, null, a.source === 'public'); },
     'import-csv': async () => {
       const a = S.account(ui.accountId);
       const files = $('#csv-file') ? [...$('#csv-file').files] : [];
@@ -1146,7 +1155,7 @@
     // Una foto diaria de las cuentas públicas (la curva de seguidores se arma sola)
     (async () => {
       const due = S.state.accounts.filter(a => a.source === 'public' && !a.demo && (A.latestDate(S.rows(a.id)) || '') < today());
-      for (const a of due) await syncAccount(a, 90, true);
+      for (const a of due) await syncAccount(a, null, true);
     })();
     S.subscribe(() => { const t = $('#sync-status'); if (t && !t.textContent.includes(':')) t.textContent = 'Guardado ' + new Date().toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }); });
     // Trae los cambios de la otra persona cada minuto y al volver a la ventana

@@ -347,6 +347,14 @@
     return e.message || `Error de Meta (HTTP ${status})`;
   }
 
+  /* Ejecuta fn sobre items con como máximo `n` llamadas a la vez
+     (Meta tolera bien ~6 en paralelo; una por una es muy lento). */
+  async function pool(items, n, fn) {
+    let i = 0;
+    const worker = async () => { while (i < items.length) { const k = i++; await fn(items[k], k); } };
+    await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
+  }
+
   const unix = s => Math.floor(new Date(s + 'T00:00:00').getTime() / 1000);
   const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   function dayList(days) {
@@ -393,19 +401,22 @@
     const metrics = ['views', 'profile_views', 'website_clicks', 'total_interactions', 'likes', 'comments', 'shares', 'saves', 'accounts_engaged'];
     const map = { views: 'views', profile_views: 'profileVisits', website_clicks: 'websiteClicks', total_interactions: 'engagements', likes: 'likes', comments: 'comments', shares: 'shares', saves: 'saves' };
     let ok = metrics.slice();
-    for (let i = 0; i < dates.length; i++) {
-      const d = dates[i];
-      progress(`Interacciones ${i + 1}/${dates.length}…`);
-      try {
-        const r = await get(`/${igId}/insights`, { metric: ok.join(','), metric_type: 'total_value', period: 'day', since: unix(d), until: unix(nextDay(d)) });
-        for (const m of r.data || []) if (map[m.name] && m.total_value) row(d)[map[m.name]] = m.total_value.value;
-      } catch (e) {
-        // Si una métrica no es válida en esta versión, la quitamos y seguimos
-        const bad = ok.find(x => (e.message || '').includes(x));
-        if (bad) { ok = ok.filter(x => x !== bad); i--; continue; }
+    const dayInsights = d => get(`/${igId}/insights`, { metric: ok.join(','), metric_type: 'total_value', period: 'day', since: unix(d), until: unix(nextDay(d)) })
+      .then(r => { for (const m of r.data || []) if (map[m.name] && m.total_value) row(d)[map[m.name]] = m.total_value.value; });
+    // El primer día se pide solo, para descartar métricas que esta versión no acepte
+    for (let tries = 0; dates.length && tries < metrics.length; tries++) {
+      try { await dayInsights(dates[dates.length - 1]); break; } catch (e) {
         if (e.code === 190) throw e;
+        const bad = ok.find(x => (e.message || '').includes(x));
+        if (!bad) break;
+        ok = ok.filter(x => x !== bad);
       }
     }
+    let done = 0;
+    await pool(dates.slice(0, -1), 6, async d => {
+      try { await dayInsights(d); } catch (e) { if (e.code === 190) throw e; }
+      progress(`Interacciones ${++done}/${dates.length - 1}…`);
+    });
 
     // Seguidores: reconstruimos el saldo hacia atrás desde el valor actual
     const sorted = Object.values(rows).sort((a, b) => a.date.localeCompare(b.date));
@@ -419,10 +430,10 @@
     progress('Publicaciones…');
     const posts = [];
     const media = await all(`/${igId}/media`, { fields: 'id,caption,media_type,media_product_type,timestamp,permalink,like_count,comments_count', limit: 50 }, undefined, 2);
-    const since = dates[0];
-    for (const m of media) {
+    // Los posts de los últimos 30 días siguen sumando alcance: se refrescan siempre
+    const since = dayList(Math.max(days, 30))[0];
+    await pool(media.filter(m => (m.timestamp || '').slice(0, 10) >= since), 6, async m => {
       const date = (m.timestamp || '').slice(0, 10);
-      if (date < since) continue;
       const p = { id: m.id, date, time: (m.timestamp || '').slice(11, 16), type: mediaType(m), caption: (m.caption || '').slice(0, 140), permalink: m.permalink, likes: m.like_count, comments: m.comments_count };
       try {
         const metricList = m.media_product_type === 'STORY' ? 'reach,views,shares' : 'reach,saved,shares,views,total_interactions';
@@ -433,8 +444,9 @@
         }
       } catch (e) { /* posts antiguos o de tipo sin insights */ }
       posts.push(p);
-      if (row(date)) row(date).posts = (row(date).posts || 0) + 1;
-    }
+      if (date >= dates[0] && date <= dates[dates.length - 1]) row(date).posts = (row(date).posts || 0) + 1;
+      progress(`Publicaciones ${posts.length}…`);
+    });
     return { rows: Object.values(rows).sort((a, b) => a.date.localeCompare(b.date)), posts, profile };
   }
 
@@ -458,8 +470,8 @@
       page_post_engagements: 'engagements', page_daily_follows_unique: 'newFollowers', page_views_total: 'profileVisits',
       page_total_actions: 'websiteClicks',
     };
-    for (const [metric, field] of Object.entries(metrics)) {
-      progress(`Página: ${metric}…`);
+    progress('Página: métricas diarias…');
+    await pool(Object.entries(metrics), 4, async ([metric, field]) => {
       try {
         for (let i = 0; i < dates.length; i += 30) {
           const chunk = dates.slice(i, i + 30);
@@ -471,7 +483,7 @@
           }
         }
       } catch (e) { if (e.code === 190) throw e; }
-    }
+    });
     const sorted = dates.map(d => row(d));
     let bal = info.followers_count ?? info.fan_count;
     for (let i = sorted.length - 1; i >= 0; i--) {
