@@ -100,5 +100,11 @@ Estructura (usa estos encabezados con ###):
     return html;
   }
 
-  root.PulsoAI = { analyze, buildPayload, render, DEFAULT_MODEL };
+  /* El mismo encargo en un solo texto: sirve para Claude Code (suscripción)
+     o para pegarlo en un chat de claude.ai */
+  function promptText(payload, question) {
+    return `${SYSTEM}\n\n---\n\n${question ? question + '\n\n' : 'Analiza estas cuentas y dame el plan.\n\n'}Datos (JSON, calculados por Pulso; tasas en proporción 0–1, montos en USD):\n${JSON.stringify(payload)}`;
+  }
+
+  root.PulsoAI = { analyze, buildPayload, promptText, render, DEFAULT_MODEL };
 })(typeof window !== 'undefined' ? window : globalThis);

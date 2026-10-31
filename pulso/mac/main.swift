@@ -250,6 +250,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         case "open":
             if let s = body["url"] as? String, let url = URL(string: s) { NSWorkspace.shared.open(url) }
             replyHandler(["ok": true], nil)
+        case "copy":
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(body["text"] as? String ?? "", forType: .string)
+            replyHandler(["ok": true], nil)
+        case "claudeCodePath":
+            runShell("command -v claude || ls ~/.local/bin/claude ~/.claude/local/claude /opt/homebrew/bin/claude /usr/local/bin/claude 2>/dev/null | head -1", input: nil) { code, out, _ in
+                let path = out.trimmingCharacters(in: .whitespacesAndNewlines)
+                replyHandler(["path": code == 0 && !path.isEmpty ? path : ""], nil)
+            }
+        case "claudeCode":
+            // Corre `claude -p` (Claude Code) con la sesión de la suscripción del usuario.
+            // El prompt entra por stdin; se ejecuta en una carpeta temporal vacía.
+            let path = body["path"] as? String ?? "claude"
+            let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+            runShell("\(quoted) -p --output-format text", input: body["prompt"] as? String ?? "") { code, out, err in
+                replyHandler(["ok": code == 0, "text": out, "error": err, "code": code], nil)
+            }
         case "saveFile":
             let panel = NSSavePanel()
             panel.nameFieldStringValue = body["name"] as? String ?? "pulso.json"
@@ -263,6 +280,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 }
             }
         default: replyHandler(nil, "operación desconocida: \(op)")
+        }
+    }
+
+    /// Ejecuta un comando en una shell de inicio de sesión (zsh -l) para tener
+    /// el mismo PATH que la Terminal, y devuelve código, salida y errores.
+    func runShell(_ command: String, input: String?, _ done: @escaping (Int32, String, String) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            p.arguments = ["-lc", command]
+            p.currentDirectoryURL = FileManager.default.temporaryDirectory
+            let outPipe = Pipe(), errPipe = Pipe(), inPipe = Pipe()
+            p.standardOutput = outPipe
+            p.standardError = errPipe
+            p.standardInput = inPipe
+            var outData = Data(), errData = Data()
+            let group = DispatchGroup()
+            group.enter(); group.enter()
+            DispatchQueue.global().async { outData = outPipe.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+            DispatchQueue.global().async { errData = errPipe.fileHandleForReading.readDataToEndOfFile(); group.leave() }
+            do {
+                try p.run()
+                if let input = input, let d = input.data(using: .utf8) { inPipe.fileHandleForWriting.write(d) }
+                try? inPipe.fileHandleForWriting.close()
+                p.waitUntilExit()
+                group.wait()
+            } catch {
+                DispatchQueue.main.async { done(-1, "", error.localizedDescription) }
+                return
+            }
+            let out = String(data: outData, encoding: .utf8) ?? ""
+            let err = String(data: errData, encoding: .utf8) ?? ""
+            let code = p.terminationStatus
+            DispatchQueue.main.async { done(code, out, err) }
         }
     }
 

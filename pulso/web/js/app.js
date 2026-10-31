@@ -558,7 +558,11 @@
       <div class="card"><h2>Analista IA</h2><p class="muted small">Claude lee el resumen de métricas, diagnósticos, contenido y metas y te devuelve una lectura estratégica con plan de 30 días. Solo se envían números agregados; nunca tokens.</p>
         <div class="row" style="margin:8px 0">${accs.map(a => `<label class="small"><input type="checkbox" name="ai-acc" value="${a.id}" checked> ${esc(a.name)}</label>`).join('')}</div>
         <label class="field">Pregunta o enfoque <span class="hint">(opcional)</span><textarea id="ai-q" style="min-height:70px;font-family:inherit" placeholder="Ej.: ¿Por qué cayó el alcance en Facebook y qué hago esta semana? ¿Cómo bajo el CPL a US$4?"></textarea></label>
-        <div class="row end" style="margin-top:10px"><button class="btn primary" data-act="ai-run" ${ui.aiBusy ? 'disabled' : ''}>${ui.aiBusy ? 'Analizando… (puede tardar un minuto)' : 'Analizar'}</button></div>
+        <div class="row end" style="margin-top:10px">
+          <button class="btn" data-act="ai-copy" title="Copia los datos y las instrucciones para pegarlos en un chat de claude.ai">Copiar para Claude</button>
+          ${ui.claudePath ? `<button class="btn primary" data-act="ai-sub" ${ui.aiBusy ? 'disabled' : ''} title="Usa Claude Code con tu suscripción, sin API key">${ui.aiBusy ? 'Analizando… (1–3 min)' : 'Analizar con mi suscripción'}</button>` : ''}
+          <button class="btn ${ui.claudePath ? '' : 'primary'}" data-act="ai-run" ${ui.aiBusy ? 'disabled' : ''}>${ui.aiBusy && !ui.claudePath ? 'Analizando…' : 'Analizar con API key'}</button></div>
+        <p class="muted small">${ui.claudePath ? '“Analizar con mi suscripción” usa Claude Code de esta Mac: sin costo extra.' : P.native ? 'Instala Claude Code (incluido en Claude Pro/Max) para analizar con tu suscripción, sin API key: en la Terminal, <code>curl -fsSL https://claude.ai/install.sh | bash</code> y luego <code>claude</code> para iniciar sesión. Reabre Pulso.' : ''} “Copiar para Claude” funciona siempre: pégalo en un chat de claude.ai.</p>
         <div id="ai-out" class="ai-out">${notes[0] ? aiNoteHtml(notes[0]) : ''}</div>
         ${notes.length > 1 ? `<details style="margin-top:12px"><summary class="small">Análisis anteriores (${notes.length - 1})</summary>${notes.slice(1, 10).map(n => `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px">${aiNoteHtml(n)}</div>`).join('')}</details>` : ''}</div>
     </div>`;
@@ -596,6 +600,35 @@
       <p class="muted small">Tasas usadas: CPM ${money(rates.cpm)}, CTR ${M.format(rates.ctr, 'pct', { decimals: 2 })}, conversión ${M.format(rates.cvr, 'pct')}, frecuencia ${rates.frequency.toFixed(1)}, ${rates.followsPer1k.toFixed(1)} seguidores por 1.000 de alcance. ${costs.real ? 'Costos de tu cuenta de Meta Ads (últimos 28 días).' : 'Costos de referencia: conecta Meta Ads para usar los tuyos.'}</p>
       <div class="row end"><button class="btn sm" data-act="plan-goal" data-obj="${objective}" data-target="${target}" data-days="${days}" data-acc="${a.id}">Convertir en meta</button></div></div>`;
   }
+  function aiInputs() {
+    const ids = $$('[name=ai-acc]:checked').map(i => i.value);
+    if (!ids.length) { toast('Elige al menos una cuenta.', true); return null; }
+    return { ids, question: $('#ai-q').value.trim(), payload: AI.buildPayload(S.state, ids, ui.period) };
+  }
+  function saveAINote(text, question, via) {
+    S.state.notes.push({ id: window.PulsoStore.uid('note'), type: 'ai', text, question, via, by: ui.person === 'Todos' ? '' : ui.person, createdAt: Date.now(), updatedAt: Date.now() });
+    S.save();
+  }
+  async function runAICopy() {
+    const inp = aiInputs(); if (!inp) return;
+    const r = await P.copyText(AI.promptText(inp.payload, inp.question));
+    if (r && r.ok === false) { toast('No pude copiar al portapapeles.', true); return; }
+    toast('Copiado. Pégalo (⌘V) en un chat nuevo de Claude.');
+    P.openExternal('https://claude.ai/new');
+  }
+  async function runAISubscription() {
+    const inp = aiInputs(); if (!inp) return;
+    ui.aiBusy = true; render();
+    try {
+      const r = await P.claudeCode(ui.claudePath, AI.promptText(inp.payload, inp.question));
+      if (!r.ok || !r.text.trim()) {
+        const err = (r.error || '').trim();
+        throw new Error(/login|auth|log in|inicia/i.test(err) ? 'Claude Code no tiene sesión iniciada: abre la Terminal, escribe "claude" e inicia sesión con tu cuenta.' : `Claude Code no respondió${err ? ': ' + err.slice(0, 200) : '.'}`);
+      }
+      saveAINote(r.text.trim(), inp.question, 'suscripción');
+    } catch (e) { toast(e.message, true); }
+    ui.aiBusy = false; render();
+  }
   async function runAI() {
     const key = await P.getSecret('anthropic_key');
     if (!key) { toast('Agrega tu API key de Claude en Ajustes → Analista IA.', true); return; }
@@ -606,8 +639,7 @@
     try {
       const payload = AI.buildPayload(S.state, ids, ui.period);
       const r = await AI.analyze({ apiKey: key, model: S.state.settings.aiModel, payload, question, http: P.http });
-      S.state.notes.push({ id: window.PulsoStore.uid('note'), type: 'ai', text: r.text + (r.truncated ? '\n\n_(respuesta cortada por longitud)_' : ''), question, by: ui.person === 'Todos' ? '' : ui.person, createdAt: Date.now(), updatedAt: Date.now() });
-      S.save();
+      saveAINote(r.text + (r.truncated ? '\n\n_(respuesta cortada por longitud)_' : ''), question, 'API');
     } catch (e) { toast(e.message, true); }
     ui.aiBusy = false; render();
   }
@@ -812,7 +844,7 @@
         <label class="field" style="margin-top:8px">Token de acceso <span class="hint">se guarda en el Llavero de esta Mac, no en el archivo compartido</span><input id="meta-token" type="password" value="${esc(metaTok)}" placeholder="EAAB…"></label>
         <div class="row" style="margin-top:8px"><label class="field" style="flex-direction:row;align-items:center;gap:8px">Versión de la API<input id="graph-ver" type="text" value="${esc(st.settings.graphVersion || 'v23.0')}" style="width:90px"></label><span class="spacer"></span><button class="btn primary" data-act="meta-discover">Guardar y buscar cuentas</button></div>
         <div id="meta-found"></div></div>
-      <div class="card"><h2>Analista IA (Claude)</h2><p class="muted small">Opcional. Crea una API key en <a href="#" data-act="open-url" data-url="https://console.anthropic.com/settings/keys">console.anthropic.com</a>. Se guarda en el Llavero de esta Mac.</p>
+      <div class="card"><h2>Analista IA (Claude)</h2><p class="muted small">Opcional. <b>Si tienes Claude Pro/Max</b>, no necesitas API key: en Estratega usa "Analizar con mi suscripción" (con Claude Code instalado) o "Copiar para Claude". Solo si prefieres la API, crea una key en <a href="#" data-act="open-url" data-url="https://console.anthropic.com/settings/keys">console.anthropic.com</a>. Se guarda en el Llavero de esta Mac.</p>
         <label class="field">API key<input id="ai-key" type="password" value="${esc(aiKey)}" placeholder="sk-ant-…"></label>
         <label class="field" style="margin-top:8px">Modelo<input id="ai-model" type="text" value="${esc(st.settings.aiModel || AI.DEFAULT_MODEL)}"></label>
         <div class="row end" style="margin-top:10px"><button class="btn" data-act="save-ai">Guardar</button></div></div>
@@ -1048,6 +1080,8 @@
       goalModal({ accountId: acc.id, metric, target: +b.dataset.target, startDate: today(), deadline: A.addDays(today(), +b.dataset.days), title: `${OBJ[b.dataset.obj]}: ${M.compact(+b.dataset.target)} en ${b.dataset.days} días`, _new: true });
     },
     'ai-run': () => runAI(),
+    'ai-sub': () => runAISubscription(),
+    'ai-copy': () => runAICopy(),
     'audit': () => runAudit(),
     'show-audit': b => { ui.auditId = b.dataset.id; render(); },
     'crawl': () => runCrawl(),
@@ -1104,6 +1138,7 @@
   // ── Arranque ────────────────────────────────────────────────
   (async function boot() {
     applyTheme(await P.getPref('theme'));
+    try { ui.claudePath = await P.claudeCodePath(); } catch (e) { ui.claudePath = ''; }
     await S.load();
     const saved = await P.getPref('person');
     if (saved && (saved === 'Todos' || S.state.people.includes(saved))) ui.person = saved;

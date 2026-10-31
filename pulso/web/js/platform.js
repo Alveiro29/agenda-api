@@ -61,6 +61,13 @@
     async getPref(k) { return native ? (await call('prefGet', { key: k })).value ?? null : LS.get('pulso:pref:' + k); },
     async setPref(k, v) { return native ? call('prefSet', { key: k, value: v == null ? '' : String(v) }) : LS.set('pulso:pref:' + k, v == null ? null : String(v)); },
     openExternal(url) { if (native) call('open', { url }); else root.open(url, '_blank', 'noopener'); },
+    async copyText(text) {
+      if (native) return call('copy', { text });
+      try { await navigator.clipboard.writeText(text); return { ok: true }; } catch (e) { return { ok: false }; }
+    },
+    /* Claude Code instalado en esta Mac → ruta del ejecutable o '' */
+    async claudeCodePath() { return native ? (await call('claudeCodePath')).path || '' : ''; },
+    async claudeCode(path, prompt) { return call('claudeCode', { path, prompt }); },
     async saveFile(name, text) {
       if (native) return call('saveFile', { name, text });
       const a = document.createElement('a');
