@@ -251,3 +251,14 @@ test('diagnóstico explica los límites de una cuenta medida sin sesión', () =>
   const d = A.diagnose({ id: 'b', name: 'Banco', platform: 'instagram', source: 'public' }, rows, [], 28);
   assert.ok(d.some(x => x.title === 'Medida con datos públicos'));
 });
+
+test('importa los archivos por métrica de Meta Business Suite', () => {
+  const reach = 'sep=,\n"Alcance de Instagram"\n"Fecha","Primary"\n"2026-10-01T00:00:00","1520"\n"2026-10-02T00:00:00","1710"\n';
+  const r = C.importCSV(reach);
+  assert.equal(r.kind, 'daily');
+  assert.deepEqual(r.rows, [{ date: '2026-10-01', reach: 1520 }, { date: '2026-10-02', reach: 1710 }]);
+  const fol = C.importCSV('sep=,\n"Seguidores de Instagram"\n"Fecha","Primary"\n"2026-10-01T00:00:00","12"\n');
+  assert.equal(fol.rows[0].newFollowers, 12);
+  const visits = C.importCSV('"Visitas al perfil de Instagram"\n"Fecha","Primary"\n"2026-10-01T00:00:00","40"\n');
+  assert.equal(visits.rows[0].profileVisits, 40);
+});

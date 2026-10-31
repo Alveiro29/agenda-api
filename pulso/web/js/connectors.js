@@ -197,6 +197,14 @@
     if (isGscHeader(headers)) return importGSC(headers, body);
 
     const mapping = Object.assign(mapHeaders(headers), opts.mapping || {});
+    /* Meta Business Suite exporta un archivo por métrica: una línea con el
+       nombre de la métrica ("Alcance de Instagram") y luego "Fecha","Primary". */
+    const title = hIdx > 0 ? table.slice(0, hIdx).map(r => r.join(' ')).filter(t => !/^sep=/i.test(t.trim())).pop() : null;
+    headers.forEach((h, i) => {
+      if (mapping[i] || !title || !['primary', 'principal', 'valor', 'value', 'total'].includes(norm(h))) return;
+      const field = businessSuiteField(title);
+      if (field) mapping[i] = field;
+    });
     const dateCol = Object.keys(mapping).find(k => mapping[k] === 'date');
     if (dateCol == null) return { kind: 'unknown', rows: [], mapping, headers, skipped: body.length, error: 'No encontré una columna de fecha.' };
     const dayFirst = opts.dayFirst ?? detectDayFirst(body.map(r => r[dateCol]));
@@ -216,6 +224,21 @@
     }
     const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
     return { kind: 'daily', rows, mapping, headers, skipped, dayFirst };
+  }
+
+  function businessSuiteField(title) {
+    const t = norm(title);
+    if (/seguidor|follows|follower|seguimiento/.test(t)) return 'newFollowers';
+    if (/visita|visits|profile/.test(t)) return 'profileVisits';
+    if (/clic|click|toque|tap/.test(t)) return 'websiteClicks';
+    if (/alcance|reach/.test(t)) return 'reach';
+    if (/visualizacion|views|impresion|impression|reproduc/.test(t)) return 'views';
+    if (/interacc|engagement/.test(t)) return 'engagements';
+    if (/me gusta|likes|reacci/.test(t)) return 'likes';
+    if (/coment/.test(t)) return 'comments';
+    if (/compart|share/.test(t)) return 'shares';
+    if (/guardad|save/.test(t)) return 'saves';
+    return null;
   }
 
   function isGscHeader(headers) {

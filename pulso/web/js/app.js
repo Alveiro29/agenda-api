@@ -512,7 +512,7 @@
       <button class="btn primary" data-act="sync" data-id="${a.id}">↻ Medir ahora</button></div></div>` : '';
     return pubCard + `<div class="grid two section">
       <div class="card"><h2>Importar CSV</h2><p class="muted small">${esc(EXPORT_HELP[a.platform] || '')}</p>
-        <div class="row"><input type="file" id="csv-file" accept=".csv,.txt,text/csv"></div>
+        <div class="row"><input type="file" id="csv-file" accept=".csv,.txt,text/csv" multiple></div>
         <details style="margin-top:8px"><summary class="small">…o pega el contenido</summary><textarea id="csv-text" placeholder="Fecha,Seguidores,Alcance,…"></textarea></details>
         <div class="row end" style="margin-top:10px"><button class="btn primary" data-act="import-csv">Importar</button></div>
         <p class="muted small">Pulso reconoce encabezados en español e inglés, fechas DD/MM o MM/DD y números con coma o punto. Si un día ya existe, se actualizan solo los campos que traiga el archivo.</p></div>
@@ -805,6 +805,7 @@
         <div class="small" style="word-break:break-all"><b>Ubicación:</b> ${esc(loc.path || '')}</div>
         <div class="row end" style="margin-top:10px">${P.native ? '<button class="btn" data-act="choose-folder">Elegir carpeta…</button>' : ''}<button class="btn" data-act="reload">Recargar ahora</button></div></div>
       <div class="card"><h2>Meta (Instagram, Facebook y Ads)</h2>
+        <p class="callout small"><b>Opcional.</b> Sin token, Pulso funciona igual: las cuentas ajenas (banco, competidores) se miden <b>sin iniciar sesión</b>, y las que administras se cargan con los CSV de <b>Meta Business Suite → Estadísticas → Exportar datos</b> (puedes subir todos los archivos juntos). El token solo automatiza la sincronización.</p>
         <ol class="steps small"><li>Entra a <a href="#" data-act="open-url" data-url="https://developers.facebook.com/apps">developers.facebook.com/apps</a> y pulsa <b>Crear app</b>. Caso de uso: <b>Otro</b> → tipo de app: <b>Empresa</b> (si te pide un portafolio comercial, puedes omitirlo).</li>
           <li>Abre el <a href="#" data-act="open-url" data-url="https://developers.facebook.com/tools/explorer/">Graph API Explorer</a>, elige tu app y agrega permisos: <code>pages_show_list, pages_read_engagement, read_insights, instagram_basic, instagram_manage_insights, ads_read, business_management</code>.</li>
           <li>Genera el token y extiéndelo a 60 días en el <a href="#" data-act="open-url" data-url="https://developers.facebook.com/tools/debug/accesstoken/">Depurador de tokens</a> → "Extender". Para que no venza nunca: Business Manager → Usuarios del sistema → Generar token.</li></ol>
@@ -993,8 +994,23 @@
     'sync-all': async () => { for (const a of visibleAccounts().filter(canMeasure)) await syncAccount(a, 90, a.source === 'public'); },
     'import-csv': async () => {
       const a = S.account(ui.accountId);
-      const text = (await readFileInput('#csv-file')) || $('#csv-text').value;
-      if (!text || !text.trim()) { toast('Elige un archivo o pega el contenido.', true); return; }
+      const files = $('#csv-file') ? [...$('#csv-file').files] : [];
+      const texts = files.length ? await Promise.all(files.map(f => f.text())) : [$('#csv-text').value];
+      if (!texts.some(t => t && t.trim())) { toast('Elige un archivo o pega el contenido.', true); return; }
+      if (texts.length > 1) {
+        // Varios archivos (ej. Meta Business Suite exporta uno por métrica)
+        let days = new Set(), ok = 0, bad = 0, found = new Set();
+        for (const t of texts) {
+          const r = C.importCSV(t);
+          if (r.kind !== 'daily' || !r.rows.length) { bad++; continue; }
+          S.upsertRows(a.id, C.adaptRows(r.rows, a.platform));
+          r.rows.forEach(x => days.add(x.date)); ok++;
+          Object.values(r.mapping).filter(f => f !== 'date').forEach(f => found.add((M.FIELDS[f] || {}).label || f));
+        }
+        toast(`${ok} archivo(s) importados · ${days.size} días (${[...found].join(', ')})${bad ? ` · ${bad} no reconocidos` : ''}.`, !ok);
+        render(); return;
+      }
+      const text = texts[0];
       const r = C.importCSV(text);
       if (r.kind === 'gsc') { S.setGSC(r.rows); toast(`Era un export de consultas: ${r.rows.length} filas cargadas en SEO → Search Console.`); ui.view = 'seo'; ui.seoTab = 'gsc'; render(); return; }
       if (r.kind !== 'daily' || !r.rows.length) { toast(r.error || 'No reconocí el formato del archivo.', true); return; }
