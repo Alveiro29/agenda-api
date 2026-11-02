@@ -361,3 +361,25 @@ test('TikTok: lee el formato SIGI_STATE y, como último recurso, los contadores 
   assert.equal(C.tiktokBlockReason({ status: 404, body: '' }), 'el usuario no existe (HTTP 404)');
   assert.equal(C.tiktokBlockReason({ status: 200, body: 'x' }), 'TikTok devolvió una página vacía');
 });
+
+test('TikTok API: URL de autorización, código pegado y datos convertidos', () => {
+  const url = C.tiktokAuthUrl({ clientKey: 'abc', redirectUri: 'https://sitio.com/', state: 'x1' });
+  assert.ok(url.startsWith('https://www.tiktok.com/v2/auth/authorize/?'));
+  assert.ok(url.includes('scope=user.info.basic%2Cuser.info.profile%2Cuser.info.stats%2Cvideo.list'));
+  assert.deepEqual(C.tiktokCodeFrom('https://sitio.com/?code=AbC_123*!&scopes=user.info.basic&state=x1'), { code: 'AbC_123*!', state: 'x1' });
+  assert.deepEqual(C.tiktokCodeFrom('https://sitio.com/?error=access_denied&error_description=El+usuario+canceló'), { error: 'El usuario canceló' });
+  assert.equal(C.tiktokCodeFrom('hola mundo'), null);
+  const user = { follower_count: 5000, likes_count: 90000, video_count: 40 };
+  const ts = Date.UTC(2026, 9, 20, 15) / 1000;
+  const vids = [{ id: '1', create_time: ts, view_count: 1000, like_count: 80, comment_count: 5, share_count: 7, share_url: 'https://tiktok.com/v/1' },
+                { id: '2', create_time: ts, view_count: 500, like_count: 20, comment_count: 1, share_count: 0 }];
+  const d = C.tiktokApiToData(user, vids, [{ date: '2026-11-01', heartTotal: 89000, videoTotal: 39, followers: 4950 }], '2026-11-02');
+  const today = d.rows.find(r => r.date === '2026-11-02');
+  assert.equal(today.followers, 5000);
+  assert.equal(today.likes, 1000);
+  assert.equal(today.posts, 1);
+  const day = d.rows.find(r => r.date === '2026-10-20');
+  assert.deepEqual(day, { date: '2026-10-20', posts: 2, views: 1500, comments: 6, shares: 7 });
+  assert.equal(d.posts[0].engagements, 92);
+  close(A.postER(d.posts[0]), 92 / 1000); // sobre vistas
+});

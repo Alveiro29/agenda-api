@@ -541,6 +541,113 @@
     return { rows, campaigns };
   }
 
+  // ── TikTok Display API (Login Kit v2) ───────────────────────
+  /* Flujo: Pulso abre la autorización de TikTok en el navegador; TikTok
+     redirige a la "Redirect URI" registrada con ?code=…; se pega esa
+     dirección en Pulso y se cambia el code por tokens. El access token
+     dura 24 h y se renueva solo con el refresh token (365 días). */
+  const TIKTOK_SCOPES = 'user.info.basic,user.info.profile,user.info.stats,video.list';
+
+  function tiktokAuthUrl({ clientKey, redirectUri, state }) {
+    const u = new URL('https://www.tiktok.com/v2/auth/authorize/');
+    u.searchParams.set('client_key', clientKey);
+    u.searchParams.set('scope', TIKTOK_SCOPES);
+    u.searchParams.set('response_type', 'code');
+    u.searchParams.set('redirect_uri', redirectUri);
+    u.searchParams.set('state', state);
+    return u.toString();
+  }
+
+  /* De lo que pegue la persona (la URL completa o solo el código) saca code y state */
+  function tiktokCodeFrom(pasted) {
+    const s = String(pasted || '').trim();
+    if (!s) return null;
+    try {
+      const u = new URL(s);
+      const code = u.searchParams.get('code');
+      if (u.searchParams.get('error')) return { error: u.searchParams.get('error_description') || u.searchParams.get('error') };
+      return code ? { code, state: u.searchParams.get('state') } : null;
+    } catch (e) {
+      return /^[\w\-*.!~%]+$/.test(s) ? { code: decodeURIComponent(s), state: null } : null;
+    }
+  }
+
+  function TikTokClient({ http, clientKey, clientSecret }) {
+    const form = o => Object.entries(o).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+    async function token(params) {
+      const r = await http('https://open.tiktokapis.com/v2/oauth/token/', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Cache-Control': 'no-cache' },
+        body: form(Object.assign({ client_key: clientKey, client_secret: clientSecret }, params)),
+      });
+      const j = r.json || {};
+      if (!r.ok || j.error || !j.access_token) throw new Error(tiktokErrorText(j.error_description || j.error || (j.error && j.error.message), r.status));
+      const now = Date.now();
+      return { access: j.access_token, refresh: j.refresh_token, openId: j.open_id, scope: j.scope,
+               expiresAt: now + (j.expires_in || 86400) * 1000, refreshExpiresAt: now + (j.refresh_expires_in || 31536000) * 1000 };
+    }
+    async function api(path, tok, opts = {}) {
+      const r = await http('https://open.tiktokapis.com' + path, { method: opts.method || 'GET',
+        headers: Object.assign({ Authorization: 'Bearer ' + tok }, opts.body ? { 'Content-Type': 'application/json' } : {}), body: opts.body ? JSON.stringify(opts.body) : undefined });
+      const j = r.json || {};
+      if (!r.ok || (j.error && j.error.code && j.error.code !== 'ok')) {
+        const e = new Error(tiktokErrorText(j.error && (j.error.message || j.error.code), r.status));
+        e.code = j.error && j.error.code; throw e;
+      }
+      return j.data || {};
+    }
+    return {
+      exchange: (code, redirectUri) => token({ code, grant_type: 'authorization_code', redirect_uri: redirectUri }),
+      refresh: refreshToken => token({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+      user: tok => api('/v2/user/info/?fields=open_id,display_name,username,follower_count,following_count,likes_count,video_count', tok).then(d => d.user || {}),
+      async videos(tok, sinceIso, max = 200) {
+        const out = [];
+        let cursor = null;
+        for (let page = 0; page < 10 && out.length < max; page++) {
+          const d = await api('/v2/video/list/?fields=id,create_time,title,video_description,duration,share_url,view_count,like_count,comment_count,share_count', tok,
+            { method: 'POST', body: Object.assign({ max_count: 20 }, cursor ? { cursor } : {}) });
+          const vids = d.videos || [];
+          out.push(...vids);
+          const oldest = vids.length ? Math.min(...vids.map(v => v.create_time || 0)) * 1000 : 0;
+          if (!d.has_more || (sinceIso && oldest && isoOf(new Date(oldest)) < sinceIso)) break;
+          cursor = d.cursor;
+        }
+        return out;
+      },
+    };
+  }
+
+  function tiktokErrorText(msg, status) {
+    const m = String(msg || '');
+    if (/invalid_grant|expired|code/i.test(m) && status === 400) return 'El código de TikTok venció o ya se usó. Vuelve a pulsar "Conectar con TikTok" y pega la dirección nueva enseguida.';
+    if (/access_token_invalid|invalid_token/i.test(m)) return 'El acceso a TikTok venció. Vuelve a conectar la cuenta.';
+    if (/scope_not_authorized|scope/i.test(m)) return 'Falta un permiso en la app de TikTok (user.info.stats o video.list). Revísalo en developers.tiktok.com.';
+    if (/redirect/i.test(m)) return 'La Redirect URI de Pulso no coincide con la registrada en developers.tiktok.com.';
+    if (/client_key|client_secret|invalid_client/i.test(m)) return 'Client key o Client secret de TikTok incorrectos (Ajustes → TikTok).';
+    return m || `Error de TikTok (HTTP ${status})`;
+  }
+
+  /* Usuario + videos de la API → filas diarias y posts para Pulso */
+  function tiktokApiToData(user, videos, prevRows, today) {
+    const rows = {};
+    const row = d => rows[d] || (rows[d] = { date: d });
+    const t = tiktokPublicToRows({ followers: user.follower_count, hearts: user.likes_count, videos: user.video_count }, prevRows, today)[0];
+    Object.assign(row(today), t);
+    // likes/posts del día de hoy se calculan por la diferencia con la medición anterior (como la medición pública)
+    const posts = (videos || []).map(v => {
+      const d = new Date((v.create_time || 0) * 1000);
+      return { id: 'tt_' + v.id, date: isoOf(d), time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, type: 'Video',
+        caption: String(v.title || v.video_description || '').slice(0, 140), permalink: v.share_url, views: v.view_count, likes: v.like_count,
+        comments: v.comment_count, shares: v.share_count, engagements: (v.like_count || 0) + (v.comment_count || 0) + (v.share_count || 0) }; // en TikTok la interacción se mide sobre vistas
+    });
+    const byDay = {};
+    for (const p of posts) {
+      const g = byDay[p.date] || (byDay[p.date] = { posts: 0, views: 0, comments: 0, shares: 0 });
+      g.posts++; g.views += p.views || 0; g.comments += p.comments || 0; g.shares += p.shares || 0;
+    }
+    for (const [d, g] of Object.entries(byDay)) if (d !== today) Object.assign(row(d), g);
+    return { rows: Object.values(rows).sort((a, b) => a.date.localeCompare(b.date)), posts };
+  }
+
   // ── Medición pública (sin iniciar sesión) ───────────────────
   /* Lo que cualquiera puede ver de un perfil: seguidores, publicaciones y
      me gusta/comentarios de cada post. NO incluye alcance, impresiones,
@@ -663,6 +770,7 @@
   }
 
   const api = { parseCSV, parseNumber, parseDate, detectDayFirst, mapHeaders, importCSV, adaptRows, MetaClient, actionSum, HEADER_MAP,
+                tiktokAuthUrl, tiktokCodeFrom, TikTokClient, tiktokApiToData, TIKTOK_SCOPES,
                 normalizeInstagramPublic, instagramPublicToData, parseTikTokProfile, tiktokBlockReason, tiktokPublicToRows };
   root.PulsoConnectors = api;
   if (typeof module !== 'undefined') module.exports = api;

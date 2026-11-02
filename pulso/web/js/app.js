@@ -81,7 +81,67 @@
   const clientColor = id => (S.client(id) || {}).color || 'var(--border-strong)';
   const CLIENT_COLORS = ['#2a78d6', '#e87ba4', '#1baf7a', '#eb6834', '#6250d6', '#eda100', '#e34948', '#008300'];
   const ownAccounts = () => visibleAccounts().filter(a => a.role !== 'competidor');
-  const canMeasure = a => a.source === 'public' || (a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId));
+  const canMeasure = a => a.source === 'public' || (a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId || a.meta.tiktokOpenId));
+
+  // ── TikTok (Display API) ────────────────────────────────────
+  async function tiktokConfig() {
+    const [clientKey, clientSecret, redirectUri] = await Promise.all([P.getSecret('tiktok_client_key'), P.getSecret('tiktok_client_secret'), P.getPref('tiktokRedirect')]);
+    return { clientKey, clientSecret, redirectUri };
+  }
+  async function tiktokClient() {
+    const cfg = await tiktokConfig();
+    if (!cfg.clientKey || !cfg.clientSecret) throw new Error('Primero pon el Client key y el Client secret de TikTok en Ajustes → TikTok.');
+    return Object.assign(C.TikTokClient({ http: P.http, clientKey: cfg.clientKey, clientSecret: cfg.clientSecret }), { cfg });
+  }
+  /* Token vigente de una cuenta (lo renueva si ya venció) */
+  async function tiktokAccess(a) {
+    let tok = null;
+    try { tok = JSON.parse(await P.getSecret('tiktok_tok_' + a.id) || 'null'); } catch (e) { tok = null; }
+    if (!tok) throw new Error('Esta cuenta de TikTok no está conectada. Pulsa "Conectar con TikTok" en Datos e importación.');
+    if (Date.now() > tok.expiresAt - 5 * 60000) {
+      if (Date.now() > tok.refreshExpiresAt) throw new Error('El acceso a TikTok venció (pasó un año). Vuelve a conectar la cuenta.');
+      const client = await tiktokClient();
+      tok = await client.refresh(tok.refresh);
+      await P.setSecret('tiktok_tok_' + a.id, JSON.stringify(tok));
+    }
+    return tok;
+  }
+  function tiktokConnectModal(a) {
+    let state = Math.random().toString(36).slice(2, 10);
+    modal({
+      title: `Conectar ${a.name} con TikTok`,
+      body: `<ol class="steps small">
+          <li>Pulsa <b>Abrir TikTok</b>. Inicia sesión con <b>la cuenta de TikTok que quieres medir</b> y acepta los permisos.</li>
+          <li>TikTok te manda a tu página de redirección (puede verse vacía o con error: es normal).</li>
+          <li><b>Copia la dirección completa</b> de la barra del navegador (⌘L, ⌘C) y pégala aquí abajo. Hazlo enseguida: el código vence en pocos minutos.</li></ol>
+        <div class="row"><button class="btn primary" data-open>Abrir TikTok</button></div>
+        <label class="field">Dirección a la que te llevó TikTok<input type="text" name="tturl" placeholder="https://…/?code=…&state=…"></label>`,
+      footer: `<button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Conectar</button>`,
+      async onMount(el, close) {
+        const client = await tiktokClient().catch(e => { toast(e.message, true); close(); return null; });
+        if (!client) return;
+        if (!client.cfg.redirectUri) { toast('Falta la Redirect URI en Ajustes → TikTok.', true); close(); return; }
+        $('[data-open]', el).addEventListener('click', () => P.openExternal(C.tiktokAuthUrl({ clientKey: client.cfg.clientKey, redirectUri: client.cfg.redirectUri, state })));
+        $('[data-save]', el).addEventListener('click', async () => {
+          const got = C.tiktokCodeFrom($('[name=tturl]', el).value);
+          if (!got) { toast('No encontré el código en lo que pegaste. Copia la dirección completa.', true); return; }
+          if (got.error) { toast(`TikTok no autorizó: ${got.error}`, true); return; }
+          if (got.state && got.state !== state) { toast('Esa dirección es de un intento anterior. Pulsa "Abrir TikTok" de nuevo.', true); return; }
+          const btn = $('[data-save]', el); btn.disabled = true; btn.textContent = 'Conectando…';
+          try {
+            const tok = await client.exchange(got.code, client.cfg.redirectUri);
+            await P.setSecret('tiktok_tok_' + a.id, JSON.stringify(tok));
+            const user = await client.user(tok.access);
+            const dup = S.state.accounts.find(x => x.id !== a.id && x.meta && x.meta.tiktokOpenId === tok.openId);
+            if (dup) throw new Error(`Esa cuenta de TikTok ya está conectada en "${dup.name}".`);
+            S.updateAccount(a.id, { meta: Object.assign({}, a.meta, { tiktokOpenId: tok.openId }), source: undefined, handle: a.handle || (user.username ? '@' + user.username : a.handle) });
+            close(); toast(`Conectada: @${user.username || user.display_name}. Sincronizando…`);
+            syncAccount(S.account(a.id));
+          } catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'Conectar'; }
+        });
+      },
+    });
+  }
   const adsRows = () => { const a = S.state.accounts.find(x => x.platform === 'meta_ads'); return a ? S.rows(a.id) : []; };
   const isSocial = p => ['instagram', 'facebook', 'tiktok', 'linkedin'].includes(p);
   const metaClient = async () => {
@@ -641,12 +701,15 @@
     const cols = fields.filter(f => last.some(r => r[f === 'position' ? 'positionSum' : f] != null));
     const label = f => (f === 'position' ? 'Posición promedio' : (M.FIELDS[f] || {}).label || f);
     const linked = a.source !== 'public' && a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId);
+    const ttCard = a.platform === 'tiktok' && a.role !== 'competidor' ? `<div class="card section"><div class="row"><div style="flex:1;min-width:260px"><h2>TikTok (API oficial)</h2>
+      <p class="muted small">${a.meta && a.meta.tiktokOpenId ? 'Conectada: se sincroniza sola (seguidores, me gusta, videos y, por video, vistas, me gusta, comentarios y compartidos). El acceso se renueva solo durante un año.' : 'Conéctala para traer seguidores y las métricas de cada video automáticamente. Requiere configurar TikTok en Ajustes una sola vez.'}</p></div>
+      ${a.meta && a.meta.tiktokOpenId ? `<button class="btn" data-act="tt-connect" data-id="${a.id}">Volver a conectar</button>` : `<button class="btn primary" data-act="tt-connect" data-id="${a.id}">Conectar con TikTok</button>`}</div></div>` : '';
     const pubCard = a.source === 'public' ? `<div class="card section"><div class="row"><div style="flex:1;min-width:260px"><h2>Medición pública (sin iniciar sesión)</h2>
       <p class="muted small">Se mide desde afuera, como a un competidor: <b>seguidores, publicaciones, me gusta y comentarios</b>. Pulso toma una foto cada día que abres la app; con varios días ves la curva de crecimiento.
       Alcance, impresiones, guardados y visitas no son públicos.${a.lastPublic ? `<br>Última medición: ${new Date(a.lastPublic.at).toLocaleString('es-DO')} · vía ${esc(a.lastPublic.via)}` : ''}</p>
       ${a.role !== 'competidor' ? `<p class="small callout">¿Quieres los datos completos de esta cuenta sin tener la sesión en tu Mac? En la computadora donde está abierta (la de Windows), exporta <b>${a.platform === 'tiktok' ? 'TikTok Studio → Analíticas → Descargar datos' : 'Meta Business Suite → Estadísticas → Exportar datos'}</b>, mándate el CSV y súbelo aquí abajo en "Importar CSV". Se combina con la medición pública.</p>` : ''}</div>
       <button class="btn primary" data-act="sync" data-id="${a.id}">↻ Medir ahora</button></div></div>` : '';
-    return pubCard + `<div class="grid two section">
+    return ttCard + pubCard + `<div class="grid two section">
       <div class="card"><h2>Importar CSV</h2><p class="muted small">${esc(EXPORT_HELP[a.platform] || '')}</p>
         <div class="row"><input type="file" id="csv-file" accept=".csv,.txt,text/csv" multiple></div>
         <details style="margin-top:8px"><summary class="small">…o pega el contenido</summary><textarea id="csv-text" placeholder="Fecha,Seguidores,Alcance,…"></textarea></details>
@@ -964,7 +1027,7 @@
   // ── Ajustes ─────────────────────────────────────────────────
   async function viewAjustes(v) {
     setHeader('Ajustes', '', '');
-    const [loc, metaTok, aiKey, theme] = await Promise.all([P.dataLocation(), P.getSecret('meta_token'), P.getSecret('anthropic_key'), P.getPref('theme')]);
+    const [loc, metaTok, aiKey, theme, ttKey, ttSecret, ttRedirect] = await Promise.all([P.dataLocation(), P.getSecret('meta_token'), P.getSecret('anthropic_key'), P.getPref('theme'), P.getSecret('tiktok_client_key'), P.getSecret('tiktok_client_secret'), P.getPref('tiktokRedirect')]);
     const st = S.state;
     v.innerHTML = `<div class="grid two">
       <div class="card"><h2>Clientes</h2><p class="muted small">Cada cliente es un espacio aparte: sus cuentas, competidores, metas y resumen. Asigna cada cuenta a su cliente en Datos e importación → Configuración.</p>
@@ -984,6 +1047,14 @@
         <label class="field" style="margin-top:8px">Token de acceso <span class="hint">se guarda en el Llavero de esta Mac, no en el archivo compartido</span><input id="meta-token" type="password" value="${esc(metaTok)}" placeholder="EAAB…"></label>
         <div class="row" style="margin-top:8px"><label class="field" style="flex-direction:row;align-items:center;gap:8px">Versión de la API<input id="graph-ver" type="text" value="${esc(st.settings.graphVersion || 'v23.0')}" style="width:90px"></label><span class="spacer"></span><button class="btn primary" data-act="meta-discover">Guardar y buscar cuentas</button></div>
         <div id="meta-found"></div></div>
+      <div class="card"><h2>TikTok (Display API)</h2><p class="muted small">Para sincronizar las cuentas de TikTok que manejas. Los datos de la app de developers.tiktok.com se guardan en el Llavero de esta Mac.</p>
+        <div class="form-grid">
+          <label class="field">Client key<input id="tt-key" type="text" value="${esc(ttKey)}" placeholder="aw…"></label>
+          <label class="field">Client secret<input id="tt-secret" type="password" value="${esc(ttSecret)}"></label>
+        </div>
+        <label class="field" style="margin-top:8px">Redirect URI <span class="hint">exactamente igual a la registrada en TikTok</span><input id="tt-redirect" type="url" value="${esc(ttRedirect || '')}" placeholder="https://tusitio.com/"></label>
+        <p class="muted small">Permisos (scopes) que debe tener la app: <code>${C.TIKTOK_SCOPES.split(',').join('</code>, <code>')}</code></p>
+        <div class="row end"><button class="btn" data-act="save-tt">Guardar</button></div></div>
       <div class="card"><h2>Analista IA (Claude)</h2><p class="muted small">Opcional. <b>Si tienes Claude Pro/Max</b>, no necesitas API key: en Estratega usa "Analizar con mi suscripción" (con Claude Code instalado) o "Copiar para Claude". Solo si prefieres la API, crea una key en <a href="#" data-act="open-url" data-url="https://console.anthropic.com/settings/keys">console.anthropic.com</a>. Se guarda en el Llavero de esta Mac.</p>
         <label class="field">API key<input id="ai-key" type="password" value="${esc(aiKey)}" placeholder="sk-ant-…"></label>
         <label class="field" style="margin-top:8px">Modelo<input id="ai-model" type="text" value="${esc(st.settings.aiModel || AI.DEFAULT_MODEL)}"></label>
@@ -1107,8 +1178,20 @@
         if (!quiet) toast(`${a.name}: ${M.compact(r.followers)} seguidores${r.posts != null ? `, ${r.posts} publicaciones recientes` : ''} · vía ${r.via}.`);
         throw null; // termina aquí sin pasar por Meta
       }
-      const client = await metaClient();
       const progress = msg => { $('#sync-status').textContent = `${a.name}: ${msg}`; };
+      if (a.platform === 'tiktok' && a.meta && a.meta.tiktokOpenId) {
+        const tok = await tiktokAccess(a);
+        const client = await tiktokClient();
+        progress('TikTok: perfil y videos…');
+        const user = await client.user(tok.access);
+        const vids = await client.videos(tok.access, A.addDays(today(), -Math.max(days, 30)));
+        const d = C.tiktokApiToData(user, vids, S.rows(a.id), today());
+        S.upsertRows(a.id, d.rows);
+        S.setPosts(a.id, d.posts);
+        if (!quiet) toast(`${a.name}: ${M.compact(user.follower_count || 0)} seguidores · ${d.posts.length} videos actualizados.`);
+        throw null; // listo, sin pasar por Meta
+      }
+      const client = await metaClient();
       let res;
       if (a.platform === 'instagram' && a.meta.igId) res = await client.syncInstagram(a.meta.igId, days, progress);
       else if (a.platform === 'facebook' && a.meta.pageId) res = await client.syncPage(a.meta.pageId, (await P.getSecret('meta_page_' + a.meta.pageId)) || undefined, days, progress);
@@ -1296,6 +1379,13 @@
       S.addAccount({ platform: b.dataset.platform, name: b.dataset.name, handle: b.dataset.platform === 'instagram' ? b.dataset.name : '', owner: ui.person === 'Todos' ? S.state.people[0] : ui.person, meta });
       b.outerHTML = '<span class="badge pass">Agregada</span>'; renderNav(); toast(`${b.dataset.name} agregada. Ábrela y pulsa Sincronizar.`);
     },
+    'save-tt': async () => {
+      await P.setSecret('tiktok_client_key', $('#tt-key').value.trim());
+      await P.setSecret('tiktok_client_secret', $('#tt-secret').value.trim());
+      await P.setPref('tiktokRedirect', $('#tt-redirect').value.trim());
+      toast('TikTok guardado. Ahora abre tu cuenta de TikTok → Datos e importación → Conectar con TikTok.');
+    },
+    'tt-connect': b => tiktokConnectModal(S.account(b.dataset.id)),
     'save-ai': async () => { await P.setSecret('anthropic_key', $('#ai-key').value.trim()); S.setSetting('aiModel', $('#ai-model').value.trim() || AI.DEFAULT_MODEL); toast('Guardado.'); },
     'export': async () => { const r = await P.saveFile(`pulso-respaldo-${today()}.json`, JSON.stringify(S.state, null, 1)); if (r && r.ok) toast('Respaldo exportado.'); },
     'import-backup': async () => {
