@@ -1124,7 +1124,12 @@
           ${i.lupa ? (i.id === lupa ? '<span class="badge info" title="Desde esta cuenta se miden las cuentas públicas y competidores">🔍 lupa</span>' : `<button class="btn sm ghost" data-act="set-lupa" data-id="${esc(i.id)}">Usar como lupa</button>`) : ''}
           ${exists(i.key, i.id) ? '<span class="badge pass">Agregada</span>' : `<button class="btn sm" data-act="meta-add" data-platform="${i.platform}" data-name="${esc(i.name)}" data-key="${i.key}" data-id="${esc(i.id)}">Agregar</button>`}</div>`).join('')}
         ${firstIg ? '<p class="muted small" style="margin-top:8px">🔍 La <b>cuenta lupa</b> es tu Instagram profesional desde el que Pulso consulta, por la vía oficial de Meta, los datos públicos de cuentas que no administras (la del banco, competidores). No necesitas iniciar sesión en ellas.</p>' : '<p class="muted small" style="margin-top:8px">Para medir cuentas ajenas por la vía oficial necesitas al menos un Instagram profesional tuyo vinculado a una Página (será tu "cuenta lupa").</p>'}`;
-    } catch (e) { out.innerHTML = `<p class="small" style="color:var(--bad)">${esc(e.message)}</p>`; }
+    } catch (e) {
+      const msg = e.code === 190
+        ? `Ese token ya venció (el corto dura 1–2 horas) y un token vencido no se puede alargar. Genera uno <b>nuevo</b> en el Graph API Explorer (Generate Access Token), borra este campo y pega el nuevo.${appSecret ? '' : ' Pon también la <b>clave secreta de la app</b> para que Pulso lo alargue solo y no vuelva a pasar.'}`
+        : esc(e.message);
+      out.innerHTML = `<p class="small" style="color:var(--bad)">${msg}</p>`;
+    }
   }
 
   const SAFARI_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
