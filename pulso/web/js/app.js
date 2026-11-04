@@ -144,8 +144,8 @@
   }
   const adsRows = () => { const a = S.state.accounts.find(x => x.platform === 'meta_ads'); return a ? S.rows(a.id) : []; };
   const isSocial = p => ['instagram', 'facebook', 'tiktok', 'linkedin'].includes(p);
-  const metaClient = async () => {
-    const token = await P.getSecret('meta_token');
+  const metaClient = async (explicit) => {
+    const token = explicit || await P.getSecret('meta_token');
     if (!token) throw new Error('Primero guarda tu token de Meta en Ajustes.');
     return C.MetaClient({ token, version: S.state.settings.graphVersion || 'v23.0', http: P.http });
   };
@@ -1027,7 +1027,7 @@
   // ── Ajustes ─────────────────────────────────────────────────
   async function viewAjustes(v) {
     setHeader('Ajustes', '', '');
-    const [loc, metaTok, aiKey, theme, ttKey, ttSecret, ttRedirect] = await Promise.all([P.dataLocation(), P.getSecret('meta_token'), P.getSecret('anthropic_key'), P.getPref('theme'), P.getSecret('tiktok_client_key'), P.getSecret('tiktok_client_secret'), P.getPref('tiktokRedirect')]);
+    const [loc, metaTok, aiKey, theme, ttKey, ttSecret, ttRedirect, metaAppId, metaAppSecret, metaExp] = await Promise.all([P.dataLocation(), P.getSecret('meta_token'), P.getSecret('anthropic_key'), P.getPref('theme'), P.getSecret('tiktok_client_key'), P.getSecret('tiktok_client_secret'), P.getPref('tiktokRedirect'), P.getPref('metaAppId'), P.getSecret('meta_app_secret'), P.getPref('metaTokenExp')]);
     const st = S.state;
     v.innerHTML = `<div class="grid two">
       <div class="card"><h2>Clientes</h2><p class="muted small">Cada cliente es un espacio aparte: sus cuentas, competidores, metas y resumen. Asigna cada cuenta a su cliente en Datos e importación → Configuración.</p>
@@ -1043,7 +1043,11 @@
         <p class="callout small"><b>Opcional.</b> Sin token, Pulso funciona igual: las cuentas ajenas (banco, competidores) se miden <b>sin iniciar sesión</b>, y las que administras se cargan con los CSV de <b>Meta Business Suite → Estadísticas → Exportar datos</b> (puedes subir todos los archivos juntos). El token solo automatiza la sincronización.</p>
         <ol class="steps small"><li>Entra a <a href="#" data-act="open-url" data-url="https://developers.facebook.com/apps">developers.facebook.com/apps</a> y pulsa <b>Crear app</b>. Caso de uso: <b>Otro</b> → tipo de app: <b>Empresa</b> (si te pide un portafolio comercial, puedes omitirlo).</li>
           <li>Abre el <a href="#" data-act="open-url" data-url="https://developers.facebook.com/tools/explorer/">Graph API Explorer</a>, elige tu app y agrega permisos: <code>pages_show_list, pages_read_engagement, read_insights, instagram_basic, instagram_manage_insights, ads_read, business_management</code>.</li>
-          <li>Genera el token y extiéndelo a 60 días en el <a href="#" data-act="open-url" data-url="https://developers.facebook.com/tools/debug/accesstoken/">Depurador de tokens</a> → "Extender". Para que no venza nunca: Business Manager → Usuarios del sistema → Generar token.</li></ol>
+          <li>Genera el token y pégalo abajo. Si pones el <b>ID de la app</b> y la <b>clave secreta</b> (developers.facebook.com → tu app → Configuración de la app → Básica), Pulso lo alarga solo a 60 días y Instagram/Facebook quedan con tokens que no vencen.</li>
+          <li>Para que <b>nada</b> venza, ni los anuncios: en el Business Manager crea un <b>usuario del sistema</b> y genera su token con vencimiento "Nunca" (pasos en el README).</li></ol>
+        <div class="form-grid"><label class="field">ID de la app<input id="meta-app-id" type="text" value="${esc(metaAppId || '')}" placeholder="9823…"></label>
+          <label class="field">Clave secreta de la app<input id="meta-app-secret" type="password" value="${esc(metaAppSecret || '')}"></label></div>
+        ${metaExp ? `<p class="small ${+metaExp - Date.now() < 7 * 86400000 ? 'callout' : 'muted'}">El token actual ${+metaExp === 0 ? 'no vence' : (+metaExp < Date.now() ? '<b>ya venció</b>' : 'vence el <b>' + new Date(+metaExp).toLocaleDateString('es-DO') + '</b>')}.</p>` : ''}
         <label class="field" style="margin-top:8px">Token de acceso <span class="hint">se guarda en el Llavero de esta Mac, no en el archivo compartido</span><input id="meta-token" type="password" value="${esc(metaTok)}" placeholder="EAAB…"></label>
         <div class="row" style="margin-top:8px"><label class="field" style="flex-direction:row;align-items:center;gap:8px">Versión de la API<input id="graph-ver" type="text" value="${esc(st.settings.graphVersion || 'v23.0')}" style="width:90px"></label><span class="spacer"></span><button class="btn primary" data-act="meta-discover">Guardar y buscar cuentas</button></div>
         <div id="meta-found"></div></div>
@@ -1067,18 +1071,44 @@
     </div>`;
   }
   async function metaDiscover() {
-    const tok = $('#meta-token').value.trim();
-    await P.setSecret('meta_token', tok);
+    let tok = $('#meta-token').value.trim();
+    const appId = $('#meta-app-id').value.trim(), appSecret = $('#meta-app-secret').value.trim();
+    await P.setPref('metaAppId', appId);
+    await P.setSecret('meta_app_secret', appSecret);
     S.setSetting('graphVersion', $('#graph-ver').value.trim() || 'v23.0');
     const out = $('#meta-found');
-    if (!tok) { out.innerHTML = ''; toast('Token borrado.'); return; }
-    out.innerHTML = '<p class="muted">Buscando cuentas…</p>';
+    if (!tok) { await P.setSecret('meta_token', ''); out.innerHTML = ''; toast('Token borrado.'); return; }
+    out.innerHTML = '<p class="muted">Revisando el token…</p>';
     try {
-      const client = await metaClient();
+      // Con ID y clave de la app: el token se alarga solo (no hace falta el Depurador)
+      let note = '';
+      if (appId && appSecret) {
+        const c0 = await metaClient(tok);
+        const info = await c0.tokenInfo(appId, appSecret).catch(() => null);
+        if (info && info.valid && info.expiresAt && info.expiresAt - Date.now() < 3 * 86400000) {
+          const ll = await c0.exchangeLongLived(appId, appSecret);
+          tok = ll.token;
+          note = 'Token alargado automáticamente. ';
+        }
+        const fin = await (await metaClient(tok)).tokenInfo(appId, appSecret).catch(() => null);
+        await P.setPref('metaTokenExp', fin ? String(fin.expiresAt || 0) : '');
+        note += fin ? (fin.expiresAt ? `Vence el ${new Date(fin.expiresAt).toLocaleDateString('es-DO')}.` : 'Este token no vence.') : '';
+      } else {
+        await P.setPref('metaTokenExp', '');
+        note = 'Sin el ID y la clave de la app no puedo alargar el token: si lo pegaste sin "Extender", vencerá en 1–2 horas.';
+      }
+      await P.setSecret('meta_token', tok);
+      $('#meta-token').value = tok;
+      out.innerHTML = '<p class="muted">Buscando cuentas…</p>';
+      const client = await metaClient(tok);
       const me = await client.me();
       const { pages, ads } = await client.discover();
       const exists = (k, id) => S.state.accounts.some(a => a.meta && a.meta[k] === id);
-      for (const p of pages) if (p.access_token) await P.setSecret('meta_page_' + p.id, p.access_token);
+      // Tokens de página: obtenidos con un token largo, NO vencen. Instagram se sincroniza con el de su Página.
+      for (const p of pages) if (p.access_token) {
+        await P.setSecret('meta_page_' + p.id, p.access_token);
+        if (p.instagram_business_account) await P.setSecret('meta_igpage_' + p.instagram_business_account.id, p.access_token);
+      }
       const items = [];
       for (const p of pages) {
         items.push({ platform: 'facebook', name: p.name, id: p.id, key: 'pageId', sub: `${M.compact(p.followers_count || p.fan_count || 0)} seguidores` });
@@ -1089,7 +1119,7 @@
       const firstIg = items.find(i => i.lupa);
       if (!lupa && firstIg) { lupa = firstIg.id; await P.setPref('lupaIgId', lupa); }
       for (const a of ads) items.push({ platform: 'meta_ads', name: a.name, id: a.id, key: 'adAccountId', sub: `${a.id} · ${a.currency || ''}${a.account_status !== 1 ? ' · inactiva' : ''}` });
-      out.innerHTML = `<p class="small">Conectado como <b>${esc(me.name)}</b>. ${items.length ? 'Agrega las cuentas que quieras seguir:' : 'No encontré Páginas, Instagram ni cuentas publicitarias con ese token: revisa los permisos.'}</p>
+      out.innerHTML = `<p class="small callout">${esc(note)} Instagram y Facebook usan el token de cada Página, que no vence; solo los anuncios dependen de este token.</p><p class="small">Conectado como <b>${esc(me.name)}</b>. ${items.length ? 'Agrega las cuentas que quieras seguir:' : 'No encontré Páginas, Instagram ni cuentas publicitarias con ese token: revisa los permisos.'}</p>
         ${items.map(i => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)">${platBadge(i.platform)}<div style="flex:1"><b>${esc(i.name)}</b><div class="muted small">${esc(i.sub)}</div></div>
           ${i.lupa ? (i.id === lupa ? '<span class="badge info" title="Desde esta cuenta se miden las cuentas públicas y competidores">🔍 lupa</span>' : `<button class="btn sm ghost" data-act="set-lupa" data-id="${esc(i.id)}">Usar como lupa</button>`) : ''}
           ${exists(i.key, i.id) ? '<span class="badge pass">Agregada</span>' : `<button class="btn sm" data-act="meta-add" data-platform="${i.platform}" data-name="${esc(i.name)}" data-key="${i.key}" data-id="${esc(i.id)}">Agregar</button>`}</div>`).join('')}
@@ -1110,8 +1140,9 @@
     if (a.platform === 'instagram') {
       let pub = null, why = '';
       const [lupa, token] = await Promise.all([P.getPref('lupaIgId'), P.getSecret('meta_token')]);
-      if (lupa && token) {
-        try { pub = C.normalizeInstagramPublic(await (await metaClient()).discoverInstagram(lupa, user)); }
+      const lupaPageTok = lupa ? await P.getSecret('meta_igpage_' + lupa) : '';
+      if (lupa && (token || lupaPageTok)) {
+        try { const lupaTok = await P.getSecret('meta_igpage_' + lupa); pub = C.normalizeInstagramPublic(await (await metaClient(lupaTok || undefined)).discoverInstagram(lupa, user)); }
         catch (e) { why = e.message; }
       }
       if (!pub) {
@@ -1191,11 +1222,16 @@
         if (!quiet) toast(`${a.name}: ${M.compact(user.follower_count || 0)} seguidores · ${d.posts.length} videos actualizados.`);
         throw null; // listo, sin pasar por Meta
       }
-      const client = await metaClient();
+      const client = await metaClient().catch(() => null); // Instagram/Facebook pueden ir solo con tokens de página
+      const need = () => { if (!client) throw new Error('Falta el token de Meta en Ajustes.'); return client; };
       let res;
-      if (a.platform === 'instagram' && a.meta.igId) res = await client.syncInstagram(a.meta.igId, days, progress);
-      else if (a.platform === 'facebook' && a.meta.pageId) res = await client.syncPage(a.meta.pageId, (await P.getSecret('meta_page_' + a.meta.pageId)) || undefined, days, progress);
-      else if (a.platform === 'meta_ads' && a.meta.adAccountId) res = await client.syncAds(a.meta.adAccountId, days, progress);
+      if (a.platform === 'instagram' && a.meta.igId) {
+        // El token de la Página vinculada no vence: se usa antes que el token personal
+        const pageTok = await P.getSecret('meta_igpage_' + a.meta.igId);
+        res = await (pageTok ? await metaClient(pageTok) : need()).syncInstagram(a.meta.igId, days, progress);
+      }
+      else if (a.platform === 'facebook' && a.meta.pageId) res = await (client || await metaClient((await P.getSecret('meta_page_' + a.meta.pageId)) || undefined)).syncPage(a.meta.pageId, (await P.getSecret('meta_page_' + a.meta.pageId)) || undefined, days, progress);
+      else if (a.platform === 'meta_ads' && a.meta.adAccountId) res = await need().syncAds(a.meta.adAccountId, days, progress);
       else throw new Error('Esta cuenta no tiene un ID de Meta configurado.');
       S.upsertRows(a.id, res.rows);
       if (res.posts) S.setPosts(a.id, res.posts);
@@ -1420,6 +1456,8 @@
     await S.load();
     // Primera vez con clientes: proponer la organización de las cuentas que ya existen
     if (!(await P.getPref('orgDismissed')) && S.state.accounts.some(a => !a.demo && (!a.clientId || !S.client(a.clientId)))) setTimeout(() => organizeModal(true), 400);
+    const exp = +(await P.getPref('metaTokenExp') || 0);
+    if (exp && exp - Date.now() < 7 * 86400000) setTimeout(() => toast(exp < Date.now() ? 'El token de Meta venció: los anuncios no se sincronizan. Instagram y Facebook siguen con sus tokens de página.' : `El token de Meta vence el ${new Date(exp).toLocaleDateString('es-DO')}. Pega uno nuevo en Ajustes (se alarga solo).`), 1200);
     if (S.lastDeduped) setTimeout(() => toast(`Se unieron ${S.lastDeduped} cuenta(s) duplicada(s) sin perder datos.`), 600);
     const savedClient = await P.getPref('client');
     if (savedClient) ui.client = savedClient;

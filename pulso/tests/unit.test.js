@@ -383,3 +383,23 @@ test('TikTok API: URL de autorización, código pegado y datos convertidos', () 
   assert.equal(d.posts[0].engagements, 92);
   close(A.postER(d.posts[0]), 92 / 1000); // sobre vistas
 });
+
+test('Meta: alarga el token y lee su vencimiento', async () => {
+  const seen = [];
+  const http = async url => {
+    seen.push(url);
+    const u = new URL(url);
+    if (u.pathname.endsWith('/oauth/access_token')) return { ok: true, status: 200, json: { access_token: 'LARGO', expires_in: 5184000 } };
+    if (u.pathname.endsWith('/debug_token')) return { ok: true, status: 200, json: { data: { is_valid: true, expires_at: 0, type: 'PAGE' } } };
+    return { ok: false, status: 404, json: { error: { message: 'x' } } };
+  };
+  const c = C.MetaClient({ token: 'CORTO', http });
+  const ll = await c.exchangeLongLived('123', 'sec');
+  assert.equal(ll.token, 'LARGO');
+  assert.ok(ll.expiresAt > Date.now() + 50 * 86400000);
+  const q = new URL(seen[0]).searchParams;
+  assert.equal(q.get('grant_type'), 'fb_exchange_token');
+  assert.equal(q.get('fb_exchange_token'), 'CORTO');
+  const info = await c.tokenInfo('123', 'sec');
+  assert.deepEqual(info, { valid: true, expiresAt: 0, type: 'PAGE' });
+});

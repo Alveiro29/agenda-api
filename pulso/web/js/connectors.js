@@ -318,6 +318,18 @@
     return {
       get, all,
       me: () => get('/me', { fields: 'id,name' }),
+      /* Cambia un token corto (1–2 h) por uno largo (~60 días). Requiere el
+         ID y la clave secreta de la app de Meta. */
+      async exchangeLongLived(appId, appSecret) {
+        const r = await get('/oauth/access_token', { grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: token });
+        return { token: r.access_token, expiresAt: r.expires_in ? Date.now() + r.expires_in * 1000 : null };
+      },
+      /* Fecha de vencimiento real del token (0 = no vence) */
+      async tokenInfo(appId, appSecret) {
+        const r = await get('/debug_token', { input_token: token, access_token: `${appId}|${appSecret}` });
+        const d = r.data || {};
+        return { valid: !!d.is_valid, expiresAt: d.expires_at ? d.expires_at * 1000 : 0, type: d.type };
+      },
       /* Descubre Páginas, Instagram profesionales vinculados y cuentas publicitarias */
       async discover() {
         const pages = await all('/me/accounts', { fields: 'id,name,access_token,followers_count,fan_count,instagram_business_account{id,username,followers_count,profile_picture_url}', limit: 50 });
@@ -341,7 +353,7 @@
   }
 
   function metaErrorText(e, status) {
-    if (e.code === 190) return 'El token de Meta venció o no es válido. Genera uno nuevo en Ajustes.';
+    if (e.code === 190) return 'El token de Meta venció o no es válido. Pega uno nuevo en Ajustes → Meta: con el ID y la clave de la app, Pulso lo alarga solo.';
     if (e.code === 10 || e.code === 200) return `Permiso faltante en el token: ${e.message || ''}`;
     if (e.code === 4 || e.code === 17 || e.code === 32 || e.code === 613) return 'Meta limitó las llamadas por un rato. Intenta de nuevo en unos minutos.';
     return e.message || `Error de Meta (HTTP ${status})`;

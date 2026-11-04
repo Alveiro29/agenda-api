@@ -85,6 +85,20 @@ Al agregar la cuenta elige **¿Cómo la medimos? → Sin iniciar sesión (datos 
   públicas (crecimiento, posts por semana e interacción por post). También enlaza a la Biblioteca de
   anuncios de Meta para ver qué anuncios tiene activos cada uno.
 
+## Que el token de Meta no venza
+
+- **Automático (recomendado):** en Ajustes → Meta pon el **ID de la app** y la **clave secreta**
+  (developers.facebook.com → app Pulso → Configuración de la app → Básica). Pulso alarga solo cualquier
+  token que pegues a ~60 días. Con ese token largo guarda el **token de cada Página**, que no vence: Instagram
+  y Facebook siguen sincronizando aunque el token principal venza. Solo los anuncios dependen del token
+  principal, y Pulso avisa 7 días antes de que venza.
+- **Que no venza nada (ni los anuncios): usuario del sistema.**
+  1. business.facebook.com → Configuración → Cuentas → **Apps** → Agregar → "Conectar un identificador de app" → ID de Pulso.
+  2. Configuración → Usuarios → **Usuarios del sistema** → Agregar → rol **Administrador**.
+  3. En ese usuario: **Asignar activos** → la Página, la cuenta de Instagram y la cuenta publicitaria (control total o ver estadísticas).
+  4. **Generar nuevo token** → app Pulso → Vencimiento **Nunca** → marca los mismos permisos → Generar.
+  5. Pega ese token en Pulso. No vuelve a vencer.
+
 ## Privacidad
 
 - Los tokens de Meta y la API key de Claude se guardan en el **Llavero de cada Mac**, nunca en el archivo
