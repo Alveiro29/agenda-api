@@ -35,6 +35,42 @@
     return { status, ok: status >= 200 && status < 300, body, json, headers, url, ms };
   }
 
+  /* Bóveda: todas las claves en UNA sola entrada del Llavero, para que
+     macOS pida permiso como mucho una vez (no una por cada clave).
+     Las claves que estaban guardadas por separado se pasan solas a la
+     bóveda la primera vez que se leen. */
+  const VAULT = '__vault';
+  let vault = null, vaultLoading = null, vaultWrite = Promise.resolve();
+  const checked = new Set();
+  function loadVault() {
+    if (vault) return Promise.resolve(vault);
+    if (!vaultLoading) vaultLoading = call('secretGet', { key: VAULT }).then(r => {
+      try { vault = JSON.parse((r && r.value) || '{}') || {}; } catch (e) { vault = {}; }
+      return vault;
+    });
+    return vaultLoading;
+  }
+  function saveVault() {
+    const text = JSON.stringify(vault);
+    vaultWrite = vaultWrite.then(() => call('secretSet', { key: VAULT, value: text })).catch(() => {});
+    return vaultWrite;
+  }
+  async function vaultGet(k) {
+    const v = await loadVault();
+    if (Object.prototype.hasOwnProperty.call(v, k)) return v[k] || '';
+    if (checked.has(k)) return '';
+    checked.add(k);
+    const old = ((await call('secretGet', { key: k })) || {}).value || '';
+    if (old) { v[k] = old; saveVault(); }
+    return old;
+  }
+  async function vaultSet(k, value) {
+    const v = await loadVault();
+    checked.add(k);
+    if (value) v[k] = value; else delete v[k];
+    return saveVault();
+  }
+
   const DATA_KEY = 'pulso:data';
   const api = {
     native,
@@ -56,8 +92,8 @@
     },
     async chooseFolder() { return native ? call('chooseFolder') : { cancelled: true, unsupported: true }; },
     async dataLocation() { return native ? call('dataLocation') : { path: 'localStorage (navegador)' }; },
-    async getSecret(k) { return native ? (await call('secretGet', { key: k })).value || '' : LS.get('pulso:secret:' + k) || ''; },
-    async setSecret(k, v) { return native ? call('secretSet', { key: k, value: v || '' }) : LS.set('pulso:secret:' + k, v || null); },
+    async getSecret(k) { return native ? vaultGet(k) : LS.get('pulso:secret:' + k) || ''; },
+    async setSecret(k, v) { return native ? vaultSet(k, v) : LS.set('pulso:secret:' + k, v || null); },
     async getPref(k) { return native ? (await call('prefGet', { key: k })).value ?? null : LS.get('pulso:pref:' + k); },
     async setPref(k, v) { return native ? call('prefSet', { key: k, value: v == null ? '' : String(v) }) : LS.set('pulso:pref:' + k, v == null ? null : String(v)); },
     openExternal(url) { if (native) call('open', { url }); else root.open(url, '_blank', 'noopener'); },
