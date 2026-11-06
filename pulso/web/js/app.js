@@ -311,10 +311,48 @@
     $('#subtitle').textContent = subtitle || '';
     $('#toolbar-actions').innerHTML = actions;
   }
-  const periodSeg = () => `<div class="seg" role="group" aria-label="Período">${[7, 28, 90].map(d => `<button data-period="${d}" class="${ui.period === d ? 'on' : ''}">${d} días</button>`).join('')}</div>`;
+  // ── Período: 7/28/90 días o un rango de fechas elegido en el calendario ──
+  const fmtD = d => A.parseISO(d).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: A.parseISO(d).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+  const periodDays = () => (ui.range ? A.diffDays(ui.range.from, ui.range.to) + 1 : ui.period);
+  const periodEnd = () => (ui.range ? ui.range.to : undefined);
+  const periodText = () => (ui.range ? `del ${fmtD(ui.range.from)} al ${fmtD(ui.range.to)}` : `últimos ${ui.period} días`);
+  const prevText = () => (ui.range ? 'el período anterior de igual duración' : `${ui.period} días previos`);
+  const periodShort = () => (ui.range ? 'período' : `${ui.period} d`);
+  const cmpOf = (rows, platform) => A.comparePeriods(rows, platform, periodDays(), periodEnd());
+  const diagOf = (a, rows, posts) => A.diagnose(a, rows, posts, periodDays(), periodEnd());
+  const inRange = p => !ui.range || (p.date >= ui.range.from && p.date <= ui.range.to);
+
+  const periodSeg = () => `<div class="seg" role="group" aria-label="Período">${[7, 28, 90].map(d => `<button data-period="${d}" class="${!ui.range && ui.period === d ? 'on' : ''}">${d} días</button>`).join('')}<button data-act="pick-range" class="${ui.range ? 'on' : ''}" title="Elegir fechas en el calendario">${ui.range ? `📅 ${fmtD(ui.range.from)} – ${fmtD(ui.range.to)}` : '📅 Fechas…'}</button></div>`;
+
+  function rangeModal() {
+    const t = today();
+    const d = new Date();
+    const first = A.iso(new Date(d.getFullYear(), d.getMonth(), 1));
+    const prevFirst = A.iso(new Date(d.getFullYear(), d.getMonth() - 1, 1)), prevLast = A.addDays(first, -1);
+    const presets = [['Este mes', first, t], ['Mes pasado', prevFirst, prevLast], ['Últimos 6 meses', A.addDays(t, -182), t], ['Este año', `${d.getFullYear()}-01-01`, t]];
+    const cur = ui.range || { from: A.addDays(t, -(ui.period - 1)), to: t };
+    modal({
+      title: 'Elegir fechas',
+      body: `<div class="row">${presets.map(([l, f, to]) => `<button class="btn sm" data-preset data-from="${f}" data-to="${to}">${l}</button>`).join('')}</div>
+        <div class="form-grid"><label class="field">Desde<input type="date" name="from" value="${cur.from}" max="${t}"></label><label class="field">Hasta<input type="date" name="to" value="${cur.to}" max="${t}"></label></div>
+        <p class="muted small">Todo Pulso mostrará solo ese rango y lo comparará contra el período anterior de igual duración (por ejemplo, octubre contra septiembre).</p>`,
+      footer: `${ui.range ? '<button class="btn" data-clear>Quitar fechas</button><span class="spacer"></span>' : ''}<button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Aplicar</button>`,
+      onMount(el, close) {
+        $$('[data-preset]', el).forEach(b => b.addEventListener('click', () => { $('[name=from]', el).value = b.dataset.from; $('[name=to]', el).value = b.dataset.to; }));
+        const clr = $('[data-clear]', el); if (clr) clr.addEventListener('click', () => { ui.range = null; close(); render(); });
+        $('[data-save]', el).addEventListener('click', () => {
+          const from = $('[name=from]', el).value, to = $('[name=to]', el).value;
+          if (!from || !to) { toast('Elige las dos fechas.', true); return; }
+          if (from > to) { toast('"Desde" debe ser antes que "Hasta".', true); return; }
+          ui.range = { from, to }; close(); render();
+        });
+      },
+    });
+  }
+
   $('#toolbar-actions').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.period) { ui.period = +b.dataset.period; render(); }
+    if (b.dataset.period) { ui.period = +b.dataset.period; ui.range = null; render(); }
     else if (b.dataset.act && ACTIONS[b.dataset.act]) ACTIONS[b.dataset.act](b);
   });
   $('#view').addEventListener('click', e => {
@@ -347,7 +385,7 @@
         <div class="row" style="justify-content:center;margin-top:14px"><button class="btn primary" data-act="add-account">Agregar cuenta</button><button class="btn" data-act="demo-load">Ver con datos de demostración</button><button class="btn" data-act="go-settings">Conectar Meta</button></div></div>`;
       return;
     }
-    const cmp = {}; for (const a of accs) cmp[a.id] = A.comparePeriods(S.rows(a.id), a.platform, ui.period);
+    const cmp = {}; for (const a of accs) cmp[a.id] = cmpOf(S.rows(a.id), a.platform);
     const agg = (key, filter) => {
       let cur = 0, prev = 0, any = false, anyPrev = false;
       for (const a of accs.filter(filter)) {
@@ -366,14 +404,14 @@
       ['searchClicks', 'Clics desde Google', agg('searchClicks', a => a.platform === 'web')],
     ].filter(k => k[2].cur != null);
 
-    const alerts = accs.flatMap(a => A.diagnose(a, S.rows(a.id), S.state.posts[a.id], ui.period)).filter(d => d.severity === 'alta').slice(0, 6);
+    const alerts = accs.flatMap(a => diagOf(a, S.rows(a.id), S.state.posts[a.id])).filter(d => d.severity === 'alta').slice(0, 6);
     const goals = S.state.goals.filter(g => accs.some(a => a.id === g.accountId));
 
     const mixed = ui.client === 'todos' && S.state.clients.length > 0;
     v.innerHTML = `
       <div class="section" ${mixed ? 'hidden' : ''}><div class="grid kpis">${kpis.map(([key, label, k]) => `
         <div class="card kpi"><div class="label">${esc(label)} <button class="info-btn" data-info="${key}" aria-label="Qué es ${esc(label)}">ⓘ</button></div>
-        <div class="value">${fmtM(key, k.cur)}</div><div class="foot">${deltaHtml(key, k.delta)}<span class="muted">vs ${ui.period} días previos</span></div></div>`).join('')}</div></div>
+        <div class="value">${fmtM(key, k.cur)}</div><div class="foot">${deltaHtml(key, k.delta)}<span class="muted">vs ${prevText()}</span></div></div>`).join('')}</div></div>
 
       ${ui.client === 'todos' && S.state.clients.length ? clientCards(accs, cmp) : ''}
       ${ui.client === 'todos' && S.state.clients.length
@@ -402,13 +440,13 @@
       const followers = sum('followers', a => isSocial(a.platform));
       const reach = sum('reach', a => isSocial(a.platform));
       const leads = sum('leads', a => a.platform === 'meta_ads' || a.platform === 'web');
-      const alerts = list.flatMap(a => A.diagnose(a, S.rows(a.id), S.state.posts[a.id], ui.period)).filter(d => d.severity === 'alta').length;
+      const alerts = list.flatMap(a => diagOf(a, S.rows(a.id), S.state.posts[a.id])).filter(d => d.severity === 'alta').length;
       const goals = S.state.goals.filter(g => list.some(a => a.id === g.accountId)).map(goalCalc).filter(Boolean);
       const onTrack = goals.filter(p => p.status === 'en_ruta' || p.status === 'logrado').length;
       return `<div class="card client-card" style="--client:${c.color}" data-act="open-client" data-id="${c.id}" tabindex="0">
         <div class="row"><h2 style="flex:1">${esc(c.name)}</h2>${alerts ? `<span class="badge alta">${alerts} alerta${alerts > 1 ? 's' : ''}</span>` : '<span class="badge bien">Sin alertas</span>'}</div>
         <div class="muted small">${list.length} cuenta${list.length === 1 ? '' : 's'} · ${comps} competidor${comps === 1 ? '' : 'es'} · ${list.map(a => plat(a.platform).short).filter((x, i, arr) => arr.indexOf(x) === i).join(' · ') || 'sin cuentas'}</div>
-        <div class="stats"><div><b>${followers != null ? M.compact(followers) : '—'}</b><small>Seguidores</small></div><div><b>${reach != null ? M.compact(reach) : '—'}</b><small>Alcance ${ui.period} d</small></div><div><b>${leads != null ? M.compact(leads) : '—'}</b><small>Leads ${ui.period} d</small></div></div>
+        <div class="stats"><div><b>${followers != null ? M.compact(followers) : '—'}</b><small>Seguidores</small></div><div><b>${reach != null ? M.compact(reach) : '—'}</b><small>Alcance ${periodShort()}</small></div><div><b>${leads != null ? M.compact(leads) : '—'}</b><small>Leads ${periodShort()}</small></div></div>
         <div class="row small"><span class="muted">Metas:</span> ${goals.length ? `<b>${onTrack}/${goals.length}</b> en ruta` : '<span class="muted">sin metas</span>'}<span class="spacer"></span><span style="color:var(--accent)">Abrir cliente →</span></div></div>`;
     }).join('');
     return `<div class="section"><div class="section-h"><h2>Clientes</h2><button class="btn sm" data-act="new-client">＋ Nuevo cliente</button></div><div class="grid cards">${cards}</div></div>`;
@@ -424,7 +462,7 @@
     const keys = primaryKeys(a.platform, a.source === 'public');
     const sparkKey = a.platform === 'meta_ads' ? 'leads' : a.platform === 'web' ? 'searchClicks' : a.source === 'public' ? 'followers' : 'reach';
     const ser = A.dailySeries(S.rows(a.id), a.platform, sparkKey, c.from, c.to).map(p => ({ y: p.value }));
-    const diag = A.diagnose(a, S.rows(a.id), S.state.posts[a.id], ui.period)[0];
+    const diag = diagOf(a, S.rows(a.id), S.state.posts[a.id])[0];
     return `<div class="card acc-card" data-act="open-account" data-id="${a.id}" tabindex="0">
       <div class="acc-head">${platBadge(a.platform)}<span class="name">${esc(a.name)}</span>${a.source === 'public' ? '<span class="badge" title="Medida sin iniciar sesión">pública</span>' : ''}<span class="muted small">${esc(a.owner || '')}</span></div>
       <div class="acc-stats">${keys.map(k => `<div><b>${fmtM(k, c.current[k])}</b><small>${esc(M.byKey[k].label)}</small><div class="small">${deltaHtml(k, c.delta[k])}</div></div>`).join('')}</div>
@@ -452,7 +490,7 @@
       if (!accs.length) { v.innerHTML = head; return; }
     }
     const rowsFor = a => {
-      const c = A.comparePeriods(S.rows(a.id), a.platform, ui.period);
+      const c = cmpOf(S.rows(a.id), a.platform);
       const t = c.t;
       const posts = t.sum.posts || 0;
       const inter = (t.sum.likes || 0) + (t.sum.comments || 0);
@@ -468,7 +506,7 @@
     const adLib = name => `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=DO&search_type=keyword_unordered&q=${encodeURIComponent(name.replace(/·.*$/, '').replace(/^@/, '').trim())}`;
     v.innerHTML = head + Object.entries(byPlat).map(([p, list]) => {
       list.sort((x, y) => (y.followers || 0) - (x.followers || 0));
-      return `<div class="card section"><div class="section-h"><h2>${platBadge(p)} ${esc(plat(p).label)}</h2><span class="muted small">últimos ${ui.period} días · ★ mejor del grupo</span></div>
+      return `<div class="card section"><div class="section-h"><h2>${platBadge(p)} ${esc(plat(p).label)}</h2><span class="muted small">${periodText()} · ★ mejor del grupo</span></div>
         <div class="table-wrap"><table><thead><tr><th>Cuenta</th><th class="r">Seguidores</th><th class="r">Crecimiento neto</th><th class="r">Tasa de crecimiento <button class="info-btn" data-info="growthRate">ⓘ</button></th>
           <th class="r">Posts/semana <button class="info-btn" data-info="postsPerWeek">ⓘ</button></th><th class="r">Interacciones por post</th><th class="r">Interacción por post <button class="info-btn" data-info="erFollowers">ⓘ</button></th><th></th></tr></thead><tbody>
         ${list.map(x => `<tr><td><a href="#" data-act="open-account" data-id="${x.a.id}"><b>${esc(x.a.name)}</b></a> <span class="badge ${x.a.role === 'competidor' ? 'warn' : 'pass'}">${x.a.role === 'competidor' ? 'competidor' : 'propia'}</span>${x.measures < 2 && x.a.source === 'public' ? ' <span class="muted small" title="Hacen falta al menos 2 mediciones en días distintos">· 1 medición</span>' : ''}</td>
@@ -620,7 +658,7 @@
   }
 
   function tabMetricas(a, rows) {
-    const c = A.comparePeriods(rows, a.platform, ui.period);
+    const c = cmpOf(rows, a.platform);
     const groups = {};
     for (const m of M.metricsFor(a.platform)) if (c.current[m.key] != null) (groups[m.group] = groups[m.group] || []).push(m);
     return `<p class="muted small" style="margin-top:-6px">${esc(c.from)} → ${esc(c.to)} comparado con ${esc(c.prevFrom)} → ${esc(c.prevTo)}${c.hasPrevious ? '' : ' (sin datos del período anterior)'} · ⓘ explica cada métrica.</p>`
@@ -632,7 +670,7 @@
   }
 
   function tabTendencias(a, rows) {
-    const c = A.comparePeriods(rows, a.platform, ui.period);
+    const c = cmpOf(rows, a.platform);
     const avail = M.metricsFor(a.platform).filter(m => c.current[m.key] != null);
     if (!ui.trendMetric || !avail.some(m => m.key === ui.trendMetric)) ui.trendMetric = (avail.find(m => m.key === (a.platform === 'meta_ads' ? 'leads' : a.platform === 'web' ? 'searchClicks' : 'reach')) || avail[0] || {}).key;
     return `<div class="card"><div class="row" style="margin-bottom:10px"><label class="field" style="flex-direction:row;align-items:center;gap:8px">Métrica
@@ -643,7 +681,7 @@
   function mountTrend(a, rows) {
     const sel = $('#trend-metric'); if (!sel) return;
     sel.addEventListener('change', () => { ui.trendMetric = sel.value; render(); });
-    const c = A.comparePeriods(rows, a.platform, ui.period);
+    const c = cmpOf(rows, a.platform);
     const key = ui.trendMetric, m = M.byKey[key];
     const cur = A.dailySeries(rows, a.platform, key, c.from, c.to);
     const prev = A.dailySeries(rows, a.platform, key, c.prevFrom, c.prevTo);
@@ -663,7 +701,8 @@
   }
 
   function tabContenido(a) {
-    const posts = S.state.posts[a.id] || [];
+    const posts = (S.state.posts[a.id] || []).filter(inRange);
+    if (ui.range && !posts.length && (S.state.posts[a.id] || []).length) return `<div class="empty"><h2>Sin publicaciones en estas fechas</h2><p>No hay publicaciones ${esc(periodText())}. Cambia el rango o vuelve a 28 días.</p></div>`;
     if (!posts.length) return `<div class="empty"><h2>Sin publicaciones</h2><p>Al sincronizar con Meta se traen las publicaciones con sus métricas. Para TikTok y LinkedIn, Pulso analiza las métricas diarias.</p></div>`;
     const ci = A.contentInsights(posts);
     const sorters = { er: p => p.er, reach: p => p.reach || p.views || 0, saves: p => p.saves || 0, shares: p => p.shares || 0, date: p => p.date };
@@ -686,8 +725,8 @@
   }
 
   function tabDiagnostico(a, rows) {
-    const list = A.diagnose(a, rows, S.state.posts[a.id], ui.period);
-    return `<p class="muted small" style="margin-top:-6px">Reglas de experto aplicadas a los últimos ${ui.period} días. Cada hallazgo trae acciones concretas. Para una lectura más profunda usa el Analista IA en Estratega.</p>` + list.map(insightHtml).join('');
+    const list = diagOf(a, rows, S.state.posts[a.id]);
+    return `<p class="muted small" style="margin-top:-6px">Reglas de experto aplicadas a ${ui.range ? 'las fechas elegidas (' + periodText() + ')' : 'los ' + periodText()}. Cada hallazgo trae acciones concretas. Para una lectura más profunda usa el Analista IA en Estratega.</p>` + list.map(insightHtml).join('');
   }
 
   function tabCampanas(a) {
@@ -826,7 +865,7 @@
   function aiInputs() {
     const ids = $$('[name=ai-acc]:checked').map(i => i.value);
     if (!ids.length) { toast('Elige al menos una cuenta.', true); return null; }
-    return { ids, question: $('#ai-q').value.trim(), payload: AI.buildPayload(S.state, ids, ui.period) };
+    return { ids, question: $('#ai-q').value.trim(), payload: AI.buildPayload(S.state, ids, periodDays(), periodEnd()) };
   }
   function saveAINote(text, question, via) {
     S.state.notes.push({ id: window.PulsoStore.uid('note'), type: 'ai', text, question, via, by: ui.person === 'Todos' ? '' : ui.person, createdAt: Date.now(), updatedAt: Date.now() });
@@ -860,7 +899,7 @@
     const question = $('#ai-q').value.trim();
     ui.aiBusy = true; render();
     try {
-      const payload = AI.buildPayload(S.state, ids, ui.period);
+      const payload = AI.buildPayload(S.state, ids, periodDays(), periodEnd());
       const r = await AI.analyze({ apiKey: key, model: S.state.settings.aiModel, payload, question, http: P.http });
       saveAINote(r.text + (r.truncated ? '\n\n_(respuesta cortada por longitud)_' : ''), question, 'API');
     } catch (e) { toast(e.message, true); }
@@ -1354,6 +1393,7 @@
   // ── Acciones ────────────────────────────────────────────────
   const ACTIONS = {
     'add-account': () => accountModal(),
+    'pick-range': () => rangeModal(),
     'new-client': () => clientModal(),
     'organize': () => organizeModal(false),
     'edit-client': b => { const c = S.client((b && b.dataset.id) || ui.client); if (c) clientModal(c); },

@@ -403,3 +403,16 @@ test('Meta: alarga el token y lee su vencimiento', async () => {
   const info = await c.tokenInfo('123', 'sec');
   assert.deepEqual(info, { valid: true, expiresAt: 0, type: 'PAGE' });
 });
+
+test('rango de fechas: compara contra el período anterior de igual duración y filtra posts', () => {
+  const rows = [];
+  for (let i = 0; i < 61; i++) rows.push({ date: A.addDays('2026-09-01', i), reach: i < 30 ? 100 : 200 });
+  const c = A.comparePeriods(rows, 'instagram', 31, '2026-10-31');
+  assert.equal(c.from, '2026-10-01');
+  assert.equal(c.prevTo, '2026-09-30');
+  assert.equal(c.current.reach, 200 * 31);
+  const posts = [{ id: 'a', date: '2026-09-15', type: 'Reel', reach: 10, likes: 1 }, { id: 'b', date: '2026-10-10', type: 'Imagen', reach: 10, likes: 1 }];
+  const many = Array.from({ length: 6 }, (_, i) => ({ id: 'x' + i, date: '2026-09-0' + (i + 1), type: 'Reel', reach: 100, likes: 50 }));
+  const d = A.diagnose({ id: 'i', name: 'IG', platform: 'instagram' }, rows, posts.concat(many), 31, '2026-10-31');
+  assert.ok(!d.some(x => /mejor formato/.test(x.title)), 'los posts fuera del rango no cuentan');
+});

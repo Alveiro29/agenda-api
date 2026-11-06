@@ -316,9 +316,11 @@
   // ── Diagnóstico ─────────────────────────────────────────────
   /* Reglas de experto: cada una mira una combinación de métricas y,
      si se cumple, propone una acción concreta. severity: alta|media|baja|bien */
-  function diagnose(account, rows, posts, days = 28) {
+  function diagnose(account, rows, posts, days = 28, to) {
     const platform = account.platform;
-    const cmp = comparePeriods(rows, platform, days);
+    const cmp = comparePeriods(rows, platform, days, to);
+    // Con un rango de fechas elegido, el análisis de contenido usa solo esos posts
+    if (to && posts) posts = posts.filter(p => p.date >= cmp.from && p.date <= cmp.to);
     const c = cmp.current, d = cmp.delta;
     const out = [];
     const add = (severity, title, detail, actions, metric) => out.push({ severity, title, detail, actions, metric, account: account.name, accountId: account.id });

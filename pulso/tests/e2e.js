@@ -97,6 +97,22 @@ const assert = require('node:assert/strict');
   await page.waitForTimeout(200);
   assert.equal(await page.locator('.conn').count(), 2, 'se agrega una segunda conexión');
 
+  // Rango de fechas personalizado: solo se muestran esas fechas
+  await page.click('[data-account=demo_ig]');
+  await page.click('[data-act=tab][data-tab=contenido]');
+  const [from, to] = await page.evaluate(() => { const A = PulsoAnalysis; const t = A.latestDate(PulsoApp.S.rows('demo_ig')); return [A.addDays(t, -9), t]; }).then(() => page.evaluate(() => { const A = PulsoAnalysis; const t = PulsoApp.S.state.posts.demo_ig.map(p => p.date).sort().pop(); return [A.addDays(t, -9), t]; }));
+  await page.click('[data-act=pick-range]');
+  await page.fill('[name=from]', from);
+  await page.fill('[name=to]', to);
+  await page.click('[data-save]');
+  await page.waitForTimeout(200);
+  assert.ok((await page.textContent('[data-act=pick-range]')).includes('📅'), 'el botón muestra el rango');
+  const dates = await page.$$eval('#tab-body table tbody tr td:first-child', tds => tds.map(td => td.textContent.trim()));
+  assert.ok(dates.length > 0 && dates.every(d => d >= from && d <= to), 'solo publicaciones del rango: ' + JSON.stringify({ from, to, dates, tab: await page.textContent('#tab-body').then(t => t.slice(0, 200)) }));
+  await page.click('[data-period="28"]');
+  await page.waitForTimeout(100);
+  assert.ok(!(await page.textContent('[data-act=pick-range]')).includes('–'), 'volver a 28 días quita el rango');
+
   // Planificador
   await page.click('[data-nav=estratega]');
   await page.click('[data-act=plan]');
