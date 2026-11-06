@@ -20,7 +20,7 @@
     posts: {},      // accountId → [{id, date, type, ...}]
     campaigns: {},  // accountId → [{id, name, spend, ...}]
     goals: [],
-    seo: { audits: [], gsc: [], gscImportedAt: null, brandTerms: [] },
+    seo: { audits: [], gsc: [], gscImportedAt: null, brandTerms: [], byClient: {} },  // byClient[clientId] = { gsc, gscImportedAt, brandTerms }
     notes: [],
     settings: { graphVersion: 'v23.0', currency: 'US$' },
     deleted: {},    // id → timestamp (para que una fusión no "resucite" lo borrado)
@@ -70,7 +70,13 @@
       gsc: (sa.gscImportedAt || 0) >= (sb.gscImportedAt || 0) ? sa.gsc || [] : sb.gsc || [],
       gscImportedAt: Math.max(sa.gscImportedAt || 0, sb.gscImportedAt || 0) || null,
       brandTerms: (newer.seo || {}).brandTerms || [],
+      byClient: {},
     };
+    // Search Console por cliente: gana la importación más reciente de cada uno
+    for (const key of new Set([...Object.keys(sa.byClient || {}), ...Object.keys(sb.byClient || {})])) {
+      const x = (sa.byClient || {})[key], y = (sb.byClient || {})[key];
+      out.seo.byClient[key] = !x ? y : !y ? x : ((x.gscImportedAt || 0) >= (y.gscImportedAt || 0) ? x : y);
+    }
     out.updatedAt = Math.max(a.updatedAt || 0, b.updatedAt || 0);
     return out;
   }
@@ -288,7 +294,32 @@
       updateGoal(id, patch) { const g = state.goals.find(x => x.id === id); if (g) { Object.assign(g, patch); touch(g); save(); } },
       removeGoal(id) { state.goals = state.goals.filter(g => g.id !== id); state.deleted[id] = Date.now(); save(); },
       addAudit(a) { state.seo.audits.unshift(touch(Object.assign({ id: uid('aud') }, a))); state.seo.audits = state.seo.audits.slice(0, 60); save(); },
-      setGSC(rows) { state.seo.gsc = rows; state.seo.gscImportedAt = Date.now(); save(); },
+      /* key '' = datos sin cliente (los de antes); cualquier otro = id del cliente */
+      seoFor(key) {
+        if (!key) return { gsc: state.seo.gsc || [], gscImportedAt: state.seo.gscImportedAt, brandTerms: state.seo.brandTerms || [] };
+        state.seo.byClient = state.seo.byClient || {};
+        return state.seo.byClient[key] || { gsc: [], gscImportedAt: null, brandTerms: [] };
+      },
+      setGSC(rows, key) {
+        if (!key) { state.seo.gsc = rows; state.seo.gscImportedAt = Date.now(); }
+        else { state.seo.byClient = state.seo.byClient || {}; state.seo.byClient[key] = Object.assign({ brandTerms: [] }, state.seo.byClient[key], { gsc: rows, gscImportedAt: Date.now() }); }
+        save();
+      },
+      setBrandTerms(terms, key) {
+        if (!key) state.seo.brandTerms = terms;
+        else { state.seo.byClient = state.seo.byClient || {}; state.seo.byClient[key] = Object.assign({ gsc: [], gscImportedAt: null }, state.seo.byClient[key], { brandTerms: terms }); }
+        save();
+      },
+      /* Pasa los datos SEO sin cliente (de antes de existir los clientes) a un cliente */
+      assignLegacySEO(key) {
+        if (state.seo.gsc && state.seo.gsc.length) {
+          state.seo.byClient = state.seo.byClient || {};
+          state.seo.byClient[key] = { gsc: state.seo.gsc, gscImportedAt: state.seo.gscImportedAt, brandTerms: state.seo.brandTerms || [] };
+          state.seo.gsc = []; state.seo.gscImportedAt = null; state.seo.brandTerms = [];
+        }
+        for (const a of state.seo.audits) if (!a.clientId) { a.clientId = key; touch(a); }
+        save();
+      },
       setPeople(list) { state.people = list; save(); },
       client: id => state.clients.find(c => c.id === id),
       addClient(c) { const cl = touch(Object.assign({ id: uid('cli'), createdAt: Date.now() }, c)); state.clients.push(cl); save(); return cl; },

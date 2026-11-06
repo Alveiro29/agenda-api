@@ -9,7 +9,8 @@ const assert = require('node:assert/strict');
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+  // Los fallos de red (sin internet en el entorno de pruebas) no son errores de la app
+  page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
   await page.goto('file://' + path.join(__dirname, '..', 'web', 'index.html'));
 
   // Cuentas creadas antes de existir los clientes: el asistente las organiza solo
@@ -67,6 +68,35 @@ const assert = require('node:assert/strict');
   await page.click('[data-nav=comparativa]');
   assert.equal(await page.locator('text=Marca · TikTok').count(), 0, 'la comparativa no mezcla clientes');
   assert.ok(await page.locator('text=Competidor A · Instagram').count() > 0);
+  // Resumen del cliente: panel de competencia (separado) y SEO del cliente
+  await page.click('[data-nav=resumen]');
+  await page.waitForTimeout(150);
+  assert.equal(await page.locator('.acc-card').count(), 4, 'las cuentas propias no incluyen competidores');
+  assert.equal(await page.locator('tr[data-act=open-account]').count(), 2, 'panel de competencia con 2 competidores');
+  assert.ok(await page.locator('text=Search Console').count() > 0, 'panel SEO con Search Console del cliente');
+  await page.fill('#qc-handle', '@nuevo.competidor');
+  await page.click('[data-act=quick-competitor]');
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('tr[data-act=open-account]').count(), 3, 'competidor agregado desde el resumen');
+  await page.fill('#qc-handle', 'https://instagram.com/nuevo.competidor/');
+  await page.click('[data-act=quick-competitor]');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => PulsoApp.S.state.accounts.filter(a => /nuevo\.competidor/i.test(a.handle || '')).length), 1, 'sin duplicados');
+  await page.click('[data-nav=resumen]');
+  await page.click('tr[data-act=open-account][data-id=demo_comp1]');
+  await page.waitForTimeout(200);
+  assert.equal(await page.textContent('#title'), 'Competidor A · Instagram');
+  assert.ok(await page.locator('#comp-growth svg').count() > 0, 'ficha con curva de crecimiento');
+  assert.ok(await page.locator('text=te supera por').count() + await page.locator('text=por debajo de ti por').count() > 0, 'compara contra la cuenta propia');
+  await page.fill('#comp-notes', 'Lanzaron campaña de tasas');
+  await page.click('[data-act=comp-notes]');
+  assert.equal(await page.evaluate(() => PulsoApp.S.account('demo_comp1').notes), 'Lanzaron campaña de tasas');
+  // SEO por cliente: otro cliente no ve el Search Console del banco
+  await page.selectOption('#client', 'demo_cli_clinica');
+  await page.click('[data-nav=seo]');
+  await page.click('[data-act=seo-tab][data-tab=gsc]');
+  assert.ok(await page.locator('text=Sin datos de Search Console').count() > 0, 'el SEO no se mezcla entre clientes');
+  await page.click('[data-act=seo-tab][data-tab=auditor]');
   await page.selectOption('#client', 'todos');
 
   // Comparativa y alta de una cuenta pública (sin red: solo el formulario)

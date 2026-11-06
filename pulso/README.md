@@ -65,6 +65,17 @@ cuentas, competidores, metas, comparativa y análisis.
 - **Vista "Todos los clientes":** muestra una tarjeta por cliente con seguidores, alcance, leads, alertas y metas en ruta. Al tocar una, se abre ese cliente y todo Pulso queda filtrado a él.
 - **Asignar cuentas:** al agregar una cuenta eliges su cliente. Para mover una cuenta ya creada, ve a *Datos e importación → Configuración de la cuenta → Cliente*.
 
+## Competencia y SEO en el Resumen de cada cliente
+
+- **Panel Competencia:** muestra los competidores del cliente, separados de sus cuentas, con seguidores,
+  crecimiento, posts por semana e interacción por post (marca si el competidor supera a tu cuenta de la
+  misma red). Se agregan ahí mismo con el @usuario.
+- **Ficha del competidor:** se abre al tocarlo. Compara cada métrica contra tu cuenta, muestra la curva de
+  crecimiento de las dos, su ritmo de publicación, qué formatos y días le funcionan y sus mejores posts.
+  Tiene **notas para el reporte**, un botón **Copiar resumen** y un enlace a sus anuncios activos.
+- **Panel SEO:** resume la última auditoría y Search Console del sitio de ese cliente. El SEO se guarda por
+  cliente; los datos de antes sin cliente se pueden asignar con un clic desde la sección SEO.
+
 ## Cuentas a las que no tienes acceso (sin iniciar sesión)
 
 Sirve para la cuenta de un cliente cuya sesión solo está abierta en otra computadora, y para los competidores.

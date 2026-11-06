@@ -179,7 +179,7 @@
   ];
   function renderNav() {
     const accs = visibleAccounts();
-    const item = a => `<button class="nav-item ${ui.view === 'cuenta' && ui.accountId === a.id ? 'active' : ''}" data-account="${a.id}" title="${a.source === 'public' ? 'Medida con datos públicos' : ''}"><span class="dot" style="background:${plat(a.platform).color}"></span><span class="grow">${esc(a.name)}</span>${a.source === 'public' ? '<span class="ico small" aria-label="pública">◌</span>' : ''}</button>`;
+    const item = a => `<button class="nav-item ${(ui.view === 'cuenta' || ui.view === 'competidor') && ui.accountId === a.id ? 'active' : ''}" data-account="${a.id}" title="${a.source === 'public' ? 'Medida con datos públicos' : ''}"><span class="dot" style="background:${plat(a.platform).color}"></span><span class="grow">${esc(a.name)}</span>${a.source === 'public' ? '<span class="ico small" aria-label="pública">◌</span>' : ''}</button>`;
     const block = list => {
       const own = list.filter(a => a.role !== 'competidor'), comps = list.filter(a => a.role === 'competidor');
       return own.map(item).join('') + (comps.length ? `<div class="nav-sec" style="padding-top:4px">Competidores</div>` + comps.map(item).join('') : '');
@@ -211,7 +211,7 @@
   $('#nav').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.nav) go(b.dataset.nav);
-    else if (b.dataset.account) go('cuenta', { accountId: b.dataset.account });
+    else if (b.dataset.account) openAccount(b.dataset.account);
     else if (b.dataset.act === 'add-account') accountModal();
   });
   $('#client').addEventListener('change', e => {
@@ -366,7 +366,7 @@
     renderNav();
     const v = $('#view');
     try {
-      ({ resumen: viewResumen, cuenta: viewCuenta, metas: viewMetas, comparativa: viewComparativa, estratega: viewEstratega, seo: viewSEO, academia: viewAcademia, ajustes: viewAjustes }[ui.view] || viewResumen)(v);
+      ({ resumen: viewResumen, cuenta: viewCuenta, metas: viewMetas, comparativa: viewComparativa, competidor: viewCompetidor, estratega: viewEstratega, seo: viewSEO, academia: viewAcademia, ajustes: viewAjustes }[ui.view] || viewResumen)(v);
     } catch (err) {
       console.error(err);
       v.innerHTML = `<div class="empty"><h2>Algo falló al dibujar esta vista</h2><p>${esc(err.message)}</p></div>`;
@@ -422,6 +422,8 @@
         : `<div class="section"><div class="section-h"><h2>Cuentas</h2><span class="muted small">Toca una cuenta para ver el detalle</span></div>
         <div class="grid cards">${accs.map(a => accountCard(a, cmp[a.id])).join('')}</div></div>`}
 
+      ${competitionPanel()}
+      ${S.client(ui.client) ? seoPanel(ui.client) : ''}
       <div class="grid two">
         <div class="card"><div class="section-h"><h2>Alertas prioritarias</h2><button class="btn sm" data-act="go-diag">Ver diagnóstico</button></div>
           ${alerts.length ? alerts.map(insightHtml).join('') : '<p class="muted">Sin alertas de prioridad alta. 👌</p>'}</div>
@@ -475,6 +477,189 @@
       <p>${ui.view !== 'cuenta' ? `<b>${esc(d.account)}:</b> ` : ''}${esc(d.detail)}</p><ul>${d.actions.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
   }
 
+  // ── Competencia ─────────────────────────────────────────────
+  function openAccount(id) {
+    const a = S.account(id);
+    if (!a) return;
+    go(a.role === 'competidor' ? 'competidor' : 'cuenta', { accountId: id });
+  }
+
+  /* Métricas comparables (solo lo público para todos: seguidores, posts,
+     me gusta y comentarios) de una cuenta en el período elegido */
+  function compStats(a) {
+    const c = cmpOf(S.rows(a.id), a.platform);
+    const t = c.t;
+    const posts = t.sum.posts || 0;
+    const inter = (t.sum.likes || 0) + (t.sum.comments || 0);
+    const perPost = posts ? inter / posts : null;
+    const measures = S.rows(a.id).filter(r => r.followers != null).length;
+    return { followers: c.current.followers, net: c.current.netFollowers, growth: c.current.growthRate, ppw: c.current.postsPerWeek,
+             perPost, er: perPost != null && t.avg.followers ? perPost / t.avg.followers : null, measures, cmp: c,
+             lastAt: a.lastPublic ? a.lastPublic.at : a.lastSync || null };
+  }
+  /* La cuenta propia del mismo cliente y la misma red, para comparar */
+  const ownPeer = a => S.state.accounts.find(x => x.role !== 'competidor' && x.platform === a.platform && (x.clientId || '') === (a.clientId || ''));
+  const adLibraryUrl = name => `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=DO&search_type=keyword_unordered&q=${encodeURIComponent(String(name).replace(/·.*$/, '').replace(/^@/, '').trim())}`;
+
+  function competitionPanel() {
+    const comps = visibleAccounts().filter(a => a.role === 'competidor');
+    const showClient = ui.client === 'todos' && S.state.clients.length > 0;
+    const pctTxt = v => (v == null ? '—' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(2)}%`);
+    const rows = comps.map(a => {
+      const st = compStats(a), peer = ownPeer(a), ps = peer ? compStats(peer) : null;
+      const vs = st.er != null && ps && ps.er != null ? st.er - ps.er : null;
+      return `<tr data-act="open-account" data-id="${a.id}" style="cursor:default">
+        <td>${platBadge(a.platform)} <b>${esc(a.name)}</b>${st.measures < 2 && a.source === 'public' ? ' <span class="muted small">· 1 medición</span>' : ''}</td>
+        ${showClient ? `<td>${esc(clientName(a.clientId))}</td>` : ''}
+        <td class="r">${st.followers != null ? M.compact(st.followers) : '—'}</td>
+        <td class="r">${st.net == null ? '—' : (st.net > 0 ? '+' : '') + M.compact(st.net)} <span class="muted small">${pctTxt(st.growth)}</span></td>
+        <td class="r">${st.ppw == null ? '—' : st.ppw.toFixed(1)}</td>
+        <td class="r">${M.format(st.er, 'pct', { decimals: 2 })}${vs != null ? ` <span class="delta ${vs > 0 ? 'down' : 'up'}" title="frente a tu cuenta de ${esc(plat(a.platform).label)}">${vs > 0 ? '▲' : '▼'} ${(Math.abs(vs) * 100).toFixed(2)} pp</span>` : ''}</td>
+        <td class="r muted small">${st.lastAt ? new Date(st.lastAt).toLocaleDateString('es-DO') : '—'}</td><td class="r">›</td></tr>`;
+    }).join('');
+    const clientSel = showClient ? `<select id="qc-client">${S.state.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>` : '';
+    return `<div class="card section"><div class="section-h"><h2>Competencia</h2><span class="muted small">${periodText()} · solo datos públicos, comparables con tus cuentas · toca un competidor para ver su ficha</span></div>
+      ${comps.length ? `<div class="table-wrap"><table><thead><tr><th>Competidor</th>${showClient ? '<th>Cliente</th>' : ''}<th class="r">Seguidores</th><th class="r">Crecimiento</th><th class="r">Posts/semana</th><th class="r">Interacción por post <button class="info-btn" data-info="erFollowers">ⓘ</button></th><th class="r">Medido</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+        <p class="muted small">"▲ pp" = el competidor supera a tu cuenta de la misma red en interacción por post; "▼" = tu cuenta va por delante.</p>`
+        : '<p class="muted">Aún no hay competidores para este cliente. Agrégalos aquí abajo con su @usuario: Pulso los mide sin iniciar sesión y toma una foto cada día.</p>'}
+      <div class="row" style="margin-top:10px"><select id="qc-platform"><option value="instagram">Instagram</option><option value="tiktok">TikTok</option></select>
+        <input id="qc-handle" type="text" placeholder="@usuario del competidor" style="flex:1;min-width:180px">${clientSel}
+        <button class="btn primary" data-act="quick-competitor">＋ Agregar competidor</button></div></div>`;
+  }
+
+  async function quickAddCompetitor() {
+    const platform = $('#qc-platform').value;
+    const handle = $('#qc-handle').value.trim();
+    const user = userOf(handle);
+    if (!user) { toast('Escribe el @usuario del competidor.', true); return; }
+    const clientId = ($('#qc-client') && $('#qc-client').value) || (S.client(ui.client) ? ui.client : undefined);
+    const dup = S.findDuplicate({ platform, handle, name: '@' + user, meta: {} });
+    if (dup) { toast(`@${user} ya está en Pulso ("${dup.name}").`, true); openAccount(dup.id); return; }
+    const acc = S.addAccount({ platform, name: `@${user} · ${M.PLATFORMS[platform].label}`, handle: '@' + user, owner: ui.person === 'Todos' ? S.state.people[0] : ui.person,
+      meta: {}, role: 'competidor', source: 'public', clientId });
+    toast(`@${user} agregado. Midiendo…`);
+    render();
+    await syncAccount(acc, null, true);
+    render();
+  }
+
+  /* Ficha del competidor: base para los reportes de competencia */
+  function viewCompetidor(v) {
+    const a = S.account(ui.accountId);
+    if (!a) { go('resumen'); return; }
+    const st = compStats(a), peer = ownPeer(a), ps = peer ? compStats(peer) : null;
+    setHeader(a.name, `Competidor · ${plat(a.platform).label}${a.handle ? ' · ' + a.handle : ''}${a.clientId ? ' · ' + clientName(a.clientId) : ''}`,
+      periodSeg() + `<button class="btn" data-act="sync" data-id="${a.id}" ${ui.syncing[a.id] ? 'disabled' : ''}>${ui.syncing[a.id] ? 'Midiendo…' : '↻ Medir ahora'}</button>`
+      + `<button class="btn" data-act="comp-copy" data-id="${a.id}">Copiar resumen</button><button class="btn ghost" data-act="open-account-raw" data-id="${a.id}">Datos y configuración</button>`);
+    const vsTxt = (mine, theirs, unit, better = 'up') => {
+      if (mine == null || theirs == null) return '';
+      const d = theirs - mine;
+      if (Math.abs(d) < 1e-9) return '<span class="muted small">igual que tu cuenta</span>';
+      const ahead = better === 'up' ? d > 0 : d < 0;
+      const val = unit === 'pct' ? `${(Math.abs(d) * 100).toFixed(2)} pp` : unit === 'x' ? Math.abs(d).toFixed(1) : M.compact(Math.abs(Math.round(d)));
+      return `<span class="delta ${ahead ? 'down' : 'up'}">${ahead ? '▲ te supera por' : '▼ por debajo de ti por'} ${val}</span>`;
+    };
+    const card = (label, theirs, mine, unit, info) => {
+      const val = theirs == null ? '—' : unit === 'pct' ? M.format(theirs, 'pct', { decimals: 2 }) : unit === 'x' ? theirs.toFixed(1) : (unit === 'signed' && theirs > 0 ? '+' : '') + M.compact(Math.round(theirs));
+      return `<div class="card kpi"><div class="label">${esc(label)}${info ? ` <button class="info-btn" data-info="${info}">ⓘ</button>` : ''}</div>
+        <div class="value">${val}</div>
+        ${peer ? `<div class="foot">${vsTxt(mine, theirs, unit === 'signed' ? 'n' : unit)}</div><div class="muted small">tu cuenta: ${mine == null ? '—' : unit === 'pct' ? M.format(mine, 'pct', { decimals: 2 }) : unit === 'x' ? mine.toFixed(1) : M.compact(Math.round(mine))}</div>` : ''}</div>`;
+    };
+    const posts = (S.state.posts[a.id] || []).filter(inRange);
+    const ci = A.contentInsights(posts);
+    const weekly = [];
+    for (let w = 7; w >= 0; w--) {
+      const to = A.addDays(st.cmp.to, -w * 7), from = A.addDays(to, -6);
+      weekly.push({ label: `${fmtD(from)}`, value: (S.state.posts[a.id] || []).filter(p => p.date >= from && p.date <= to).length });
+    }
+    v.innerHTML = `
+      ${peer ? `<p class="muted small" style="margin-top:-6px">Comparado con tu cuenta <b>${esc(peer.name)}</b> · ${esc(periodText())}. Solo métricas públicas, iguales para las dos.</p>` : `<p class="callout small">Agrega una cuenta propia de ${esc(plat(a.platform).label)} en este cliente para compararla con este competidor.</p>`}
+      <div class="grid kpis section">
+        ${card('Seguidores', st.followers, ps && ps.followers, 'n', 'followers')}
+        ${card('Crecimiento neto', st.net, ps && ps.net, 'signed', 'netFollowers')}
+        ${card('Tasa de crecimiento', st.growth, ps && ps.growth, 'pct', 'growthRate')}
+        ${card('Publicaciones por semana', st.ppw, ps && ps.ppw, 'x', 'postsPerWeek')}
+        ${card('Interacciones por post', st.perPost, ps && ps.perPost, 'n')}
+        ${card('Interacción por post (% seguidores)', st.er, ps && ps.er, 'pct', 'erFollowers')}
+      </div>
+      <div class="grid two section">
+        <div class="card"><h2>Crecimiento de seguidores</h2><p class="muted small">% de cambio desde el inicio del período${peer ? ': la línea gris es tu cuenta' : ''}.</p><div id="comp-growth"></div></div>
+        <div class="card"><h2 style="margin-bottom:10px">Ritmo de publicación (últimas 8 semanas)</h2>${CH.bars(weekly.map(w => ({ label: 'Sem. ' + w.label, value: w.value })), { decimals: 0 })}</div>
+      </div>
+      ${ci.n ? `<div class="grid two section">
+        <div class="card"><h2 style="margin-bottom:10px">Qué formato le funciona</h2>${CH.bars(ci.byType.map(t => ({ label: t.key, value: t.er, note: `· ${t.n} posts` })), { unit: 'pct', decimals: 2, highlightFirst: true })}</div>
+        <div class="card"><h2 style="margin-bottom:10px">Qué días le funcionan</h2>${CH.bars(ci.byWeekday.map(t => ({ label: t.key, value: t.er, note: `· ${t.n}` })), { unit: 'pct', decimals: 2, highlightFirst: true })}</div></div>
+      <div class="card section"><h2 style="margin-bottom:8px">Sus publicaciones con más interacción</h2><div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Formato</th><th>Texto</th><th class="r">Me gusta</th><th class="r">Comentarios</th><th class="r">Interacción</th></tr></thead><tbody>
+        ${ci.top.map(p => `<tr><td>${esc(p.date)}</td><td>${esc(p.type || '')}</td><td class="wrap">${p.permalink ? `<a href="#" data-act="open-url" data-url="${esc(p.permalink)}">${esc((p.caption || '(sin texto)').slice(0, 80))}</a>` : esc((p.caption || '').slice(0, 80))}</td><td class="r">${p.likes ?? '—'}</td><td class="r">${p.comments ?? '—'}</td><td class="r">${M.format(p.er, 'pct', { decimals: 2 })}</td></tr>`).join('')}</tbody></table></div></div>`
+        : `<div class="card section"><p class="muted">Todavía no hay publicaciones medidas de este competidor${ui.range ? ' en estas fechas' : ''}. ${a.platform === 'tiktok' ? 'En TikTok la medición pública trae totales, no cada video.' : 'Pulsa "Medir ahora".'}</p></div>`}
+      <div class="grid two">
+        <div class="card"><h2>Notas para el reporte</h2><p class="muted small">Observaciones cualitativas: tono, ofertas, campañas que viste, cambios de estrategia. Se incluyen en "Copiar resumen".</p>
+          <textarea id="comp-notes" style="font-family:inherit;min-height:110px">${esc(a.notes || '')}</textarea>
+          <div class="row end" style="margin-top:8px"><button class="btn" data-act="comp-notes" data-id="${a.id}">Guardar notas</button></div></div>
+        <div class="card"><h2>Más sobre este competidor</h2>
+          <div class="row" style="margin-top:8px">${a.handle ? `<button class="btn" data-act="open-url" data-url="${esc(a.platform === 'tiktok' ? 'https://www.tiktok.com/@' + userOf(a.handle) : 'https://www.instagram.com/' + userOf(a.handle) + '/')}">Ver perfil ↗</button>` : ''}
+            ${['instagram', 'facebook'].includes(a.platform) ? `<button class="btn" data-act="open-url" data-url="${esc(adLibraryUrl(a.name))}">Anuncios activos (Biblioteca de Meta) ↗</button>` : ''}</div>
+          <p class="muted small" style="margin-top:10px">${st.measures} medición(es) guardada(s)${st.lastAt ? ` · última el ${new Date(st.lastAt).toLocaleString('es-DO')}` : ''}. El crecimiento y el ritmo se vuelven más confiables con una semana de mediciones diarias.</p></div>
+      </div>`;
+    // Curva de crecimiento indexada (misma escala para las dos cuentas)
+    const series = acc => {
+      const pts = A.dailySeries(S.rows(acc.id), acc.platform, 'followers', st.cmp.from, st.cmp.to);
+      const base = (pts.find(p => p.value != null) || {}).value;
+      return pts.map(p => ({ x: p.date, y: p.value != null && base ? p.value / base - 1 : null }));
+    };
+    const lines = [{ name: a.name, points: series(a), color: 'var(--series-2)', markers: true }];
+    if (peer) lines.push({ name: peer.name, points: series(peer), color: 'var(--series-prev)' });
+    CH.line($('#comp-growth'), lines, { unit: 'pct', decimals: 2, height: 220, zeroBased: false, label: 'Crecimiento de seguidores' });
+  }
+
+  async function copyCompetitorSummary(a) {
+    const st = compStats(a), peer = ownPeer(a), ps = peer ? compStats(peer) : null;
+    const ci = A.contentInsights((S.state.posts[a.id] || []).filter(inRange));
+    const pct = v => (v == null ? '—' : M.format(v, 'pct', { decimals: 2 }));
+    const lines = [
+      `Competidor: ${a.name}${a.handle ? ' (' + a.handle + ')' : ''} · ${plat(a.platform).label}${a.clientId ? ' · cliente ' + clientName(a.clientId) : ''}`,
+      `Período: ${periodText()}`,
+      `• Seguidores: ${st.followers != null ? M.compact(st.followers) : '—'} (crecimiento ${st.net == null ? '—' : (st.net > 0 ? '+' : '') + M.compact(st.net)}, ${pct(st.growth)})${ps ? ` · tu cuenta: ${ps.followers != null ? M.compact(ps.followers) : '—'} (${pct(ps.growth)})` : ''}`,
+      `• Publicaciones por semana: ${st.ppw == null ? '—' : st.ppw.toFixed(1)}${ps ? ` · tu cuenta: ${ps.ppw == null ? '—' : ps.ppw.toFixed(1)}` : ''}`,
+      `• Interacción por post: ${pct(st.er)} (${st.perPost == null ? '—' : M.compact(Math.round(st.perPost))} interacciones)${ps ? ` · tu cuenta: ${pct(ps.er)}` : ''}`,
+      ci.byType[0] ? `• Mejor formato: ${ci.byType[0].key} (${pct(ci.byType[0].er)})${ci.byWeekday[0] ? ` · mejor día: ${ci.byWeekday[0].key}` : ''}` : null,
+      ci.top[0] ? `• Post con más interacción: ${ci.top[0].date} · ${ci.top[0].type} · "${(ci.top[0].caption || '').slice(0, 80)}"` : null,
+      a.notes ? `Notas: ${a.notes}` : null,
+      'Fuente: datos públicos medidos por Pulso.',
+    ].filter(Boolean);
+    const r = await P.copyText(lines.join('\n'));
+    toast(r && r.ok === false ? 'No pude copiar al portapapeles.' : 'Resumen copiado: pégalo en tu reporte.');
+  }
+
+  // ── SEO en el Resumen del cliente ───────────────────────────
+  const seoKey = () => (S.client(ui.client) ? ui.client : '');
+  function seoPanel(clientId) {
+    const webs = S.state.accounts.filter(a => a.platform === 'web' && a.clientId === clientId);
+    const audits = S.state.seo.audits.filter(x => x.clientId === clientId);
+    const last = audits[0];
+    const seo = S.seoFor(clientId);
+    const o = seo.gsc && seo.gsc.length ? SEO.gscOpportunities(seo.gsc, { brandTerms: seo.brandTerms || [], minImpressions: 50 }) : null;
+    const url = last ? last.url : webs[0] && /^https?:/.test(webs[0].handle || '') ? webs[0].handle : '';
+    if (!webs.length && !last && !o) {
+      return `<div class="card section"><div class="section-h"><h2>SEO</h2></div><p class="muted">Este cliente aún no tiene SEO configurado. Agrega su sitio web para auditarlo e importar Search Console.</p>
+        <div class="row"><button class="btn primary" data-act="add-web">＋ Agregar sitio web</button><button class="btn" data-act="seo-go" data-tab="gsc">Importar Search Console</button></div></div>`;
+    }
+    const t = o && o.totals;
+    return `<div class="card section"><div class="section-h"><h2>SEO${webs[0] ? ' · ' + esc(webs[0].name) : ''}</h2><button class="btn sm" data-act="seo-go" data-tab="auditor">Ver SEO completo</button></div>
+      <div class="grid two">
+        <div>${last ? `<div class="row" style="gap:14px">${CH.ring(last.score, 72)}<div><b>Última auditoría</b><div class="muted small">${esc(last.url)}</div><div class="muted small">${new Date(last.updatedAt).toLocaleDateString('es-DO')}</div>
+          <div class="row small" style="margin-top:6px"><span class="badge fail">${last.counts.fail} críticos</span><span class="badge warn">${last.counts.warn} a mejorar</span></div></div></div>
+          ${last.checks.filter(c => c.status === 'fail').slice(0, 3).map(c => `<div class="small" style="margin-top:6px">✕ <b>${esc(c.label)}</b> <span class="muted">— ${esc(c.fix || c.detail)}</span></div>`).join('')}`
+          : `<p class="muted">Aún no se ha auditado el sitio.</p>`}
+          <div class="row" style="margin-top:10px"><button class="btn sm" data-act="seo-go" data-tab="auditor" data-url="${esc(url)}">${last ? 'Auditar de nuevo' : 'Auditar ahora'}</button></div></div>
+        <div>${o ? `<b>Search Console</b> <span class="muted small">· importado el ${new Date(seo.gscImportedAt).toLocaleDateString('es-DO')}</span>
+          <div class="goal-stats"><div><small>Clics</small><b>${M.compact(t.clicks)}</b></div><div><small>Impresiones</small><b>${M.compact(t.impressions)}</b></div><div><small>CTR</small><b>${M.format(t.ctr, 'pct', { decimals: 2 })}</b></div>
+            <div><small>Posición prom.</small><b>${t.position ? t.position.toFixed(1) : '—'}</b></div><div><small>Clics potenciales</small><b>+${M.compact(Math.round(t.potential))}</b></div></div>
+          ${o.striking.slice(0, 3).length ? `<div class="small" style="margin-top:8px"><b>🎯 Más cerca del top 3:</b>${o.striking.slice(0, 3).map(r => `<div class="muted">${esc(r.query || r.page)} — pos. ${r.position.toFixed(1)}, +${M.compact(Math.round(r.potential))} clics posibles</div>`).join('')}</div>` : ''}`
+          : `<p class="muted">Sin datos de Search Console.</p><button class="btn sm" data-act="seo-go" data-tab="gsc">Importar Search Console</button>`}</div>
+      </div></div>`;
+  }
+
   // ── Comparativa ─────────────────────────────────────────────
   /* Solo usa lo que es público para TODAS las cuentas (seguidores,
      publicaciones, me gusta y comentarios), para que sea justa entre
@@ -489,16 +674,7 @@
         <button class="btn primary" data-act="add-competitor">＋ Agregar competidor</button></div>`;
       if (!accs.length) { v.innerHTML = head; return; }
     }
-    const rowsFor = a => {
-      const c = cmpOf(S.rows(a.id), a.platform);
-      const t = c.t;
-      const posts = t.sum.posts || 0;
-      const inter = (t.sum.likes || 0) + (t.sum.comments || 0);
-      const perPost = posts ? inter / posts : null;
-      const measures = S.rows(a.id).filter(r => r.followers != null).length;
-      return { a, followers: c.current.followers, net: c.current.netFollowers, growth: c.current.growthRate, ppw: c.current.postsPerWeek,
-               perPost, er: perPost != null && t.avg.followers ? perPost / t.avg.followers : null, measures };
-    };
+    const rowsFor = a => Object.assign({ a }, compStats(a));
     const byPlat = {};
     for (const a of accs) (byPlat[a.platform] = byPlat[a.platform] || []).push(rowsFor(a));
     const best = (list, k) => Math.max(...list.map(x => (x[k] == null ? -Infinity : x[k])));
@@ -908,24 +1084,29 @@
 
   // ── SEO ─────────────────────────────────────────────────────
   function viewSEO(v) {
-    setHeader('SEO', 'Auditoría on-page, Search Console y rastreo', '');
+    const cl = S.client(ui.client);
+    setHeader(cl ? `SEO · ${cl.name}` : 'SEO', cl ? 'Auditoría, Search Console y rastreo de este cliente' : 'Elige un cliente arriba para ver su SEO; aquí se muestra lo que no tiene cliente', '');
     const tabs = [['auditor', 'Auditor on-page'], ['gsc', 'Search Console'], ['rastreo', 'Rastreo e indexación']];
     let body = '';
     if (ui.seoTab === 'auditor') body = seoAuditor();
     else if (ui.seoTab === 'gsc') body = seoGSC();
     else body = seoRastreo();
     v.innerHTML = `<div class="tabs">${tabs.map(([k, l]) => `<button data-act="seo-tab" data-tab="${k}" class="${ui.seoTab === k ? 'on' : ''}">${l}</button>`).join('')}</div>${body}`;
-    if (ui.seoTab === 'gsc' && S.state.seo.gsc.length) mountCtrCurve();
+    if (ui.seoTab === 'gsc' && S.seoFor(seoKey()).gsc.length) mountCtrCurve();
   }
   function seoAuditor() {
-    const audits = S.state.seo.audits;
+    const key = seoKey();
+    const audits = S.state.seo.audits.filter(x => (x.clientId || '') === key);
     const cur = audits.find(x => x.id === ui.auditId) || audits[0];
-    const web = S.state.accounts.find(a => a.platform === 'web');
+    const web = S.state.accounts.find(a => a.platform === 'web' && (a.clientId || '') === key) || (!key && S.state.accounts.find(a => a.platform === 'web'));
+    const prefill = ui.seoPrefill; ui.seoPrefill = null;
+    const orphan = key && S.state.seo.audits.filter(x => !x.clientId).length;
     return `<div class="card section"><div class="row">
-        <input id="seo-url" type="url" placeholder="https://tusitio.com/pagina" value="${esc(cur ? cur.url : (web && /^https?:/.test(web.handle || '') ? web.handle : ''))}" style="flex:2;min-width:240px">
+        <input id="seo-url" type="url" placeholder="https://tusitio.com/pagina" value="${esc(prefill || (cur ? cur.url : (web && /^https?:/.test(web.handle || '') ? web.handle : '')))}" style="flex:2;min-width:240px">
         <input id="seo-kw" type="text" placeholder="Palabra clave objetivo (opcional)" value="${esc(cur ? cur.keyword || '' : '')}" style="flex:1;min-width:180px">
         <button class="btn primary" data-act="audit">Auditar</button></div>
-        ${P.native ? '' : '<p class="muted small">En el navegador solo se pueden auditar sitios que permiten CORS. En la app de Mac funciona con cualquier URL.</p>'}</div>
+        ${P.native ? '' : '<p class="muted small">En el navegador solo se pueden auditar sitios que permiten CORS. En la app de Mac funciona con cualquier URL.</p>'}
+        ${orphan ? `<p class="small callout" style="margin-top:8px">Hay ${orphan} auditoría(s) de antes sin cliente. <button class="btn sm" data-act="gsc-assign">Asignarlas a este cliente</button></p>` : ''}</div>
       ${cur ? auditHtml(cur) : '<div class="empty"><h2>Audita una página</h2><p>Revisa ~30 factores: título y descripción (con vista previa en Google), encabezados, palabra clave, imágenes, enlaces, datos estructurados, Open Graph, indexabilidad, móvil y rendimiento.</p></div>'}
       ${audits.length > 1 ? `<div class="card"><h2 style="margin-bottom:8px">Historial</h2><div class="table-wrap"><table><thead><tr><th>Fecha</th><th>URL</th><th>Palabra clave</th><th class="r">Puntaje</th></tr></thead><tbody>
         ${audits.map(x => `<tr data-act="show-audit" data-id="${x.id}"><td>${new Date(x.updatedAt).toLocaleDateString('es-DO')}</td><td>${esc(x.url)}</td><td>${esc(x.keyword || '—')}</td><td class="r"><span class="badge ${x.score >= 80 ? 'pass' : x.score >= 55 ? 'warn' : 'fail'}">${x.score}</span></td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
@@ -956,7 +1137,7 @@
       const res = await P.http(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15 Pulso-SEO', 'Accept': 'text/html' } });
       if (!res.ok) throw new Error(`La página respondió HTTP ${res.status}`);
       const r = SEO.auditHTML(res.body, res.url || url, kw, { ms: res.ms, headers: res.headers });
-      S.addAudit({ url: r.url, keyword: kw, score: r.score, title: r.title, description: r.description, h1: r.h1, wordCount: r.wordCount, checks: r.checks, counts: r.counts });
+      S.addAudit({ clientId: seoKey() || undefined, url: r.url, keyword: kw, score: r.score, title: r.title, description: r.description, h1: r.h1, wordCount: r.wordCount, checks: r.checks, counts: r.counts });
       ui.auditId = S.state.seo.audits[0].id;
       render();
     } catch (e) {
@@ -965,15 +1146,19 @@
     }
   }
   function seoGSC() {
-    const rows = S.state.seo.gsc;
-    const brand = (S.state.seo.brandTerms || []).join(', ');
+    const key = seoKey();
+    const seo = S.seoFor(key);
+    const rows = seo.gsc || [];
+    const brand = (seo.brandTerms || []).join(', ');
+    const legacy = key && !rows.length && (S.state.seo.gsc || []).length;
     const importer = `<div class="card section"><div class="row"><div style="flex:1;min-width:240px"><h2>Importar desde Search Console</h2>
-      <p class="muted small">Search Console → Rendimiento → elige 3 meses → Exportar → CSV. Sube el archivo de <b>Consultas</b> (o <b>Páginas</b>).${S.state.seo.gscImportedAt ? ` Última importación: ${new Date(S.state.seo.gscImportedAt).toLocaleDateString('es-DO')}.` : ''}</p></div>
+      <p class="muted small">Search Console → Rendimiento → elige 3 meses → Exportar → CSV. Sube el archivo de <b>Consultas</b> (o <b>Páginas</b>).${seo.gscImportedAt ? ` Última importación: ${new Date(seo.gscImportedAt).toLocaleDateString('es-DO')}.` : ''}</p>
+      ${legacy ? `<p class="small callout">Hay datos de Search Console de antes, sin cliente (${(S.state.seo.gsc || []).length} filas). Si son de este cliente: <button class="btn sm" data-act="gsc-assign">Asignarlos aquí</button></p>` : ''}</div>
       <input type="file" id="gsc-file" accept=".csv,text/csv"><button class="btn primary" data-act="gsc-import">Importar</button></div>
       <div class="row" style="margin-top:8px"><label class="field" style="flex-direction:row;align-items:center;gap:8px">Términos de marca<input id="brand-terms" type="text" value="${esc(brand)}" placeholder="tu marca, variaciones"></label><button class="btn sm" data-act="save-brand">Guardar</button>
       <span class="muted small">Separa búsquedas de marca (ya te conocen) de no-marca (público nuevo).</span></div></div>`;
     if (!rows.length) return importer + '<div class="empty"><h2>Sin datos de Search Console</h2><p>Con el export de consultas, Pulso encuentra las palabras en "distancia de impacto" (posiciones 4–20), las de CTR anormalmente bajo y estima cuántos clics ganarías.</p></div>';
-    const o = SEO.gscOpportunities(rows, { brandTerms: S.state.seo.brandTerms || [], minImpressions: 50 });
+    const o = SEO.gscOpportunities(rows, { brandTerms: seo.brandTerms || [], minImpressions: 50 });
     const dim = rows[0].query != null ? 'query' : 'page';
     const cann = SEO.cannibalization(rows);
     const t = o.totals;
@@ -1004,7 +1189,7 @@
   }
   function mountCtrCurve() {
     const el = $('#ctr-curve'); if (!el) return;
-    const rows = S.state.seo.gsc;
+    const rows = S.seoFor(seoKey()).gsc;
     const pts = [];
     for (let p = 1; p <= 20; p++) {
       const g = rows.filter(r => Math.round(r.position) === p);
@@ -1017,7 +1202,7 @@
     ], { unit: 'pct', decimals: 1, height: 230, xLabel: p => `${p.x}`, tipLabel: p => `Posición ${p.x}`, label: 'CTR por posición' });
   }
   function seoRastreo() {
-    const web = S.state.accounts.find(a => a.platform === 'web');
+    const web = S.state.accounts.find(a => a.platform === 'web' && (a.clientId || '') === seoKey()) || S.state.accounts.find(a => a.platform === 'web');
     let dom = ''; try { dom = web && web.handle ? new URL(web.handle).origin : ''; } catch (e) { /* nada */ }
     return `<div class="card section"><div class="row"><input id="crawl-domain" type="url" placeholder="https://tusitio.com" value="${esc(dom)}" style="flex:1;min-width:240px"><button class="btn primary" data-act="crawl">Revisar</button></div>
       <p class="muted small">Revisa robots.txt (¿bloquea a Google?), los sitemaps declarados y cuántas URLs contienen, y la redirección de http a https.</p></div><div id="crawl-out"></div>`;
@@ -1418,7 +1603,14 @@
     'go-settings': () => go('ajustes'),
     'go-goals': () => go('metas'),
     'go-diag': () => { const a = visibleAccounts()[0]; if (a) go('cuenta', { accountId: a.id, tab: 'diagnostico' }); },
-    'open-account': b => go('cuenta', { accountId: b.dataset.id }),
+    'open-account': b => openAccount(b.dataset.id),
+    'open-account-raw': b => go('cuenta', { accountId: b.dataset.id, tab: 'datos' }),
+    'quick-competitor': () => quickAddCompetitor(),
+    'comp-copy': b => copyCompetitorSummary(S.account(b.dataset.id)),
+    'comp-notes': b => { const a = S.account(b.dataset.id); S.updateAccount(a.id, { notes: $('#comp-notes').value }); toast('Notas guardadas.'); },
+    'seo-go': b => { ui.seoTab = b.dataset.tab || 'auditor'; if (b.dataset.url) ui.seoPrefill = b.dataset.url; go('seo'); },
+    'gsc-assign': () => { S.assignLegacySEO(seoKey()); toast('Datos SEO asignados a este cliente.'); render(); },
+    'add-web': () => accountModal({ platform: 'web', source: 'api', clientId: S.client(ui.client) ? ui.client : undefined }),
     'tab': b => { ui.tab = b.dataset.tab; render(); },
     'seo-tab': b => { ui.seoTab = b.dataset.tab; render(); },
     'new-goal': () => goalModal(),
@@ -1450,7 +1642,7 @@
       }
       const text = texts[0];
       const r = C.importCSV(text);
-      if (r.kind === 'gsc') { S.setGSC(r.rows); toast(`Era un export de consultas: ${r.rows.length} filas cargadas en SEO → Search Console.`); ui.view = 'seo'; ui.seoTab = 'gsc'; render(); return; }
+      if (r.kind === 'gsc') { S.setGSC(r.rows, a.clientId && S.client(a.clientId) ? a.clientId : seoKey()); toast(`Era un export de consultas: ${r.rows.length} filas cargadas en SEO → Search Console.`); ui.view = 'seo'; ui.seoTab = 'gsc'; render(); return; }
       if (r.kind !== 'daily' || !r.rows.length) { toast(r.error || 'No reconocí el formato del archivo.', true); return; }
       const rows = C.adaptRows(r.rows, a.platform);
       S.upsertRows(a.id, rows);
@@ -1498,9 +1690,9 @@
       if (!text) { toast('Elige el CSV de consultas o páginas.', true); return; }
       const r = C.importCSV(text);
       if (r.kind !== 'gsc') { toast('Ese archivo no parece un export de Consultas/Páginas de Search Console.', true); return; }
-      S.setGSC(r.rows); toast(`${r.rows.length} ${r.dimension === 'query' ? 'consultas' : 'páginas'} importadas.`); render();
+      S.setGSC(r.rows, seoKey()); toast(`${r.rows.length} ${r.dimension === 'query' ? 'consultas' : 'páginas'} importadas.`); render();
     },
-    'save-brand': () => { S.state.seo.brandTerms = $('#brand-terms').value.split(',').map(s => s.trim()).filter(Boolean); S.save(); render(); },
+    'save-brand': () => { S.setBrandTerms($('#brand-terms').value.split(',').map(s => s.trim()).filter(Boolean), seoKey()); render(); },
     'save-people': () => {
       const p1 = $('#p1').value.trim() || 'Persona 1', p2 = $('#p2').value.trim() || 'Persona 2';
       const old = S.state.people.slice();

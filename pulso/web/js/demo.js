@@ -154,7 +154,8 @@
     Object.assign(state.campaigns, d.campaigns);
     const gids = new Set(state.goals.map(g => g.id));
     for (const g of d.goals) if (!gids.has(g.id)) state.goals.push(g);
-    if (!state.seo.gsc || !state.seo.gsc.length) { state.seo.gsc = d.gsc; state.seo.gscImportedAt = Date.now(); state.seo.brandTerms = ['marca']; }
+    state.seo.byClient = state.seo.byClient || {};
+    if (!state.seo.byClient.demo_cli_banco) state.seo.byClient.demo_cli_banco = { gsc: d.gsc, gscImportedAt: Date.now(), brandTerms: ['marca'] };
     for (const id of Object.keys(state.deleted || {})) if (id.startsWith('demo_')) delete state.deleted[id];
     return state;
   }
@@ -166,6 +167,7 @@
     for (const id of ids) { delete state.series[id]; delete state.posts[id]; delete state.campaigns[id]; state.deleted[id] = Date.now(); }
     state.goals = state.goals.filter(g => { if (g.demo) state.deleted[g.id] = Date.now(); return !g.demo; });
     if (state.seo.gsc && state.seo.gsc.some(r => r.query === 'marca rd')) state.seo.gsc = [];
+    if (state.seo.byClient) delete state.seo.byClient.demo_cli_banco;
     return state;
   }
 
