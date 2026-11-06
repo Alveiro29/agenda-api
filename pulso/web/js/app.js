@@ -144,6 +144,29 @@
   }
   const adsRows = () => { const a = S.state.accounts.find(x => x.platform === 'meta_ads'); return a ? S.rows(a.id) : []; };
   const isSocial = p => ['instagram', 'facebook', 'tiktok', 'linkedin'].includes(p);
+  // ── Conexiones de Meta: una por app (p. ej. la de la Dra y la de Ademi) ──
+  /* Cada conexión tiene su ID de app, clave secreta y token (en el Llavero
+     de esta Mac). La conexión "default" usa las claves de antes, así lo que
+     ya estaba configurado sigue funcionando sin tocar nada. */
+  const connKeys = id => id === 'default'
+    ? { token: 'meta_token', secret: 'meta_app_secret', appId: 'metaAppId', exp: 'metaTokenExp', lupa: 'lupaIgId' }
+    : { token: 'meta_token_' + id, secret: 'meta_app_secret_' + id, appId: 'metaAppId_' + id, exp: 'metaTokenExp_' + id, lupa: 'lupaIgId_' + id };
+  async function metaConns() {
+    let list = [];
+    try { list = JSON.parse((await P.getPref('metaConns')) || '[]') || []; } catch (e) { list = []; }
+    if (!list.some(c => c.id === 'default')) list.unshift({ id: 'default', name: 'Principal' });
+    return list;
+  }
+  const saveMetaConns = list => P.setPref('metaConns', JSON.stringify(list));
+  const connOf = a => (a && a.meta && a.meta.conn) || 'default';
+  async function metaClientFor(a) {
+    const conns = await metaConns();
+    const id = connOf(a);
+    const tok = await P.getSecret(connKeys(id).token);
+    if (!tok) throw new Error(`Falta el token de la conexión de Meta "${(conns.find(c => c.id === id) || {}).name || id}" (Ajustes → Meta).`);
+    return metaClient(tok);
+  }
+
   const metaClient = async (explicit) => {
     const token = explicit || await P.getSecret('meta_token');
     if (!token) throw new Error('Primero guarda tu token de Meta en Ajustes.');
@@ -1029,6 +1052,11 @@
     setHeader('Ajustes', '', '');
     const [loc, metaTok, aiKey, theme, ttKey, ttSecret, ttRedirect, metaAppId, metaAppSecret, metaExp] = await Promise.all([P.dataLocation(), P.getSecret('meta_token'), P.getSecret('anthropic_key'), P.getPref('theme'), P.getSecret('tiktok_client_key'), P.getSecret('tiktok_client_secret'), P.getPref('tiktokRedirect'), P.getPref('metaAppId'), P.getSecret('meta_app_secret'), P.getPref('metaTokenExp')]);
     const st = S.state;
+    const metaConnsData = await Promise.all((await metaConns()).map(async c => {
+      const k = connKeys(c.id);
+      const [token, secret, appId, exp] = await Promise.all([P.getSecret(k.token), P.getSecret(k.secret), P.getPref(k.appId), P.getPref(k.exp)]);
+      return Object.assign({}, c, { token, secret, appId, exp });
+    }));
     v.innerHTML = `<div class="grid two">
       <div class="card"><h2>Clientes</h2><p class="muted small">Cada cliente es un espacio aparte: sus cuentas, competidores, metas y resumen. Asigna cada cuenta a su cliente en Datos e importación → Configuración.</p>
         ${S.state.clients.map(c => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)"><span style="width:12px;height:12px;border-radius:3px;background:${c.color}"></span><b style="flex:1">${esc(c.name)}</b><span class="muted small">${S.state.accounts.filter(a => a.clientId === c.id).length} cuentas</span><button class="btn sm" data-act="edit-client" data-id="${c.id}">Editar</button></div>`).join('') || '<p class="muted">Aún no hay clientes.</p>'}
@@ -1045,12 +1073,21 @@
           <li>Abre el <a href="#" data-act="open-url" data-url="https://developers.facebook.com/tools/explorer/">Graph API Explorer</a>, elige tu app y agrega permisos: <code>pages_show_list, pages_read_engagement, read_insights, instagram_basic, instagram_manage_insights, ads_read, business_management</code>.</li>
           <li>Genera el token y pégalo abajo. Si pones el <b>ID de la app</b> y la <b>clave secreta</b> (developers.facebook.com → tu app → Configuración de la app → Básica), Pulso lo alarga solo a 60 días y Instagram/Facebook quedan con tokens que no vencen.</li>
           <li>Para que <b>nada</b> venza, ni los anuncios: en el Business Manager crea un <b>usuario del sistema</b> y genera su token con vencimiento "Nunca" (pasos en el README).</li></ol>
-        <div class="form-grid"><label class="field">ID de la app<input id="meta-app-id" type="text" value="${esc(metaAppId || '')}" placeholder="9823…"></label>
-          <label class="field">Clave secreta de la app<input id="meta-app-secret" type="password" value="${esc(metaAppSecret || '')}"></label></div>
-        ${metaExp ? `<p class="small ${+metaExp - Date.now() < 7 * 86400000 ? 'callout' : 'muted'}">El token actual ${+metaExp === 0 ? 'no vence' : (+metaExp < Date.now() ? '<b>ya venció</b>' : 'vence el <b>' + new Date(+metaExp).toLocaleDateString('es-DO') + '</b>')}.</p>` : ''}
-        <label class="field" style="margin-top:8px">Token de acceso <span class="hint">se guarda en el Llavero de esta Mac, no en el archivo compartido</span><input id="meta-token" type="password" value="${esc(metaTok)}" placeholder="EAAB…"></label>
-        <div class="row" style="margin-top:8px"><label class="field" style="flex-direction:row;align-items:center;gap:8px">Versión de la API<input id="graph-ver" type="text" value="${esc(st.settings.graphVersion || 'v23.0')}" style="width:90px"></label><span class="spacer"></span><button class="btn primary" data-act="meta-discover">Guardar y buscar cuentas</button></div>
-        <div id="meta-found"></div></div>
+        <p class="muted small">Una <b>conexión por app de Meta</b>: por ejemplo una para la app de la Dra y otra para la de Banco Ademi. Cada cuenta sincroniza con la conexión con la que la agregaste.</p>
+        ${metaConnsData.map(c => `<div class="conn" data-conn="${c.id}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px">
+          <div class="form-grid">
+            <label class="field">Nombre de la conexión<input data-f="name" type="text" value="${esc(c.name)}" placeholder="Ej.: App Banco Ademi"></label>
+            <label class="field">Cliente de las cuentas nuevas<select data-f="clientId"><option value="">Sin cliente</option>${S.state.clients.map(cl => `<option value="${cl.id}" ${cl.id === c.clientId ? 'selected' : ''}>${esc(cl.name)}</option>`).join('')}</select></label>
+            <label class="field">ID de la app<input data-f="appId" type="text" value="${esc(c.appId || '')}" placeholder="9823…"></label>
+            <label class="field">Clave secreta de la app<input data-f="secret" type="password" value="${esc(c.secret || '')}"></label>
+          </div>
+          ${c.exp ? `<p class="small ${+c.exp - Date.now() < 7 * 86400000 ? 'callout' : 'muted'}">El token ${+c.exp === 0 ? 'no vence' : (+c.exp < Date.now() ? '<b>ya venció</b>' : 'vence el <b>' + new Date(+c.exp).toLocaleDateString('es-DO') + '</b>')}.</p>` : ''}
+          <label class="field" style="margin-top:8px">Token de acceso <span class="hint">se guarda en el Llavero de esta Mac, no en el archivo compartido</span><input data-f="token" type="password" value="${esc(c.token || '')}" placeholder="EAAB…"></label>
+          <div class="row" style="margin-top:8px"><span class="muted small">${S.state.accounts.filter(a => connOf(a) === c.id && a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId)).length} cuenta(s) conectadas</span><span class="spacer"></span>
+            ${c.id !== 'default' ? `<button class="btn danger sm" data-act="meta-conn-del" data-conn="${c.id}">Quitar</button>` : ''}<button class="btn primary" data-act="meta-discover" data-conn="${c.id}">Guardar y buscar cuentas</button></div>
+          <div class="meta-found"></div></div>`).join('')}
+        <div class="row" style="margin-top:10px"><button class="btn" data-act="meta-conn-add">＋ Agregar otra conexión de Meta</button><span class="spacer"></span>
+          <label class="field" style="flex-direction:row;align-items:center;gap:8px">Versión de la API<input id="graph-ver" type="text" value="${esc(st.settings.graphVersion || 'v23.0')}" style="width:90px"></label></div></div>
       <div class="card"><h2>TikTok (Display API)</h2><p class="muted small">Para sincronizar las cuentas de TikTok que manejas. Los datos de la app de developers.tiktok.com se guardan en el Llavero de esta Mac.</p>
         <div class="form-grid">
           <label class="field">Client key<input id="tt-key" type="text" value="${esc(ttKey)}" placeholder="aw…"></label>
@@ -1070,14 +1107,23 @@
         <h2 style="margin-top:16px">Apariencia</h2><div class="seg" style="margin-top:8px">${[['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([k, l]) => `<button data-act="theme" data-theme="${k}" class="${(theme || 'auto') === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     </div>`;
   }
-  async function metaDiscover() {
-    let tok = $('#meta-token').value.trim();
-    const appId = $('#meta-app-id').value.trim(), appSecret = $('#meta-app-secret').value.trim();
-    await P.setPref('metaAppId', appId);
-    await P.setSecret('meta_app_secret', appSecret);
+  async function metaDiscover(connId = 'default') {
+    const box = $(`.conn[data-conn="${connId}"]`);
+    if (!box) return;
+    const f = n => ($(`[data-f="${n}"]`, box) || {}).value || '';
+    const k = connKeys(connId);
+    let tok = f('token').trim();
+    const appId = f('appId').trim(), appSecret = f('secret').trim();
+    const list = await metaConns();
+    const conn = list.find(c => c.id === connId) || { id: connId };
+    conn.name = f('name').trim() || conn.name || 'Conexión';
+    conn.clientId = f('clientId');
+    await saveMetaConns(list.map(c => (c.id === connId ? conn : c)));
+    await P.setPref(k.appId, appId);
+    await P.setSecret(k.secret, appSecret);
     S.setSetting('graphVersion', $('#graph-ver').value.trim() || 'v23.0');
-    const out = $('#meta-found');
-    if (!tok) { await P.setSecret('meta_token', ''); out.innerHTML = ''; toast('Token borrado.'); return; }
+    const out = $('.meta-found', box);
+    if (!tok) { await P.setSecret(k.token, ''); out.innerHTML = ''; toast('Token borrado.'); return; }
     out.innerHTML = '<p class="muted">Revisando el token…</p>';
     try {
       // Con ID y clave de la app: el token se alarga solo (no hace falta el Depurador)
@@ -1091,19 +1137,19 @@
           note = 'Token alargado automáticamente. ';
         }
         const fin = await (await metaClient(tok)).tokenInfo(appId, appSecret).catch(() => null);
-        await P.setPref('metaTokenExp', fin ? String(fin.expiresAt || 0) : '');
+        await P.setPref(k.exp, fin ? String(fin.expiresAt || 0) : '');
         note += fin ? (fin.expiresAt ? `Vence el ${new Date(fin.expiresAt).toLocaleDateString('es-DO')}.` : 'Este token no vence.') : '';
       } else {
-        await P.setPref('metaTokenExp', '');
+        await P.setPref(k.exp, '');
         note = 'Sin el ID y la clave de la app no puedo alargar el token: si lo pegaste sin "Extender", vencerá en 1–2 horas.';
       }
-      await P.setSecret('meta_token', tok);
-      $('#meta-token').value = tok;
+      await P.setSecret(k.token, tok);
+      $('[data-f="token"]', box).value = tok;
       out.innerHTML = '<p class="muted">Buscando cuentas…</p>';
       const client = await metaClient(tok);
       const me = await client.me();
       const { pages, ads } = await client.discover();
-      const exists = (k, id) => S.state.accounts.some(a => a.meta && a.meta[k] === id);
+      const exists = (key, id) => S.state.accounts.some(a => a.meta && a.meta[key] === id && connOf(a) === connId);
       // Tokens de página: obtenidos con un token largo, NO vencen. Instagram se sincroniza con el de su Página.
       for (const p of pages) if (p.access_token) {
         await P.setSecret('meta_page_' + p.id, p.access_token);
@@ -1115,14 +1161,14 @@
         const ig = p.instagram_business_account;
         if (ig) items.push({ platform: 'instagram', name: '@' + (ig.username || ig.id), id: ig.id, key: 'igId', sub: `${M.compact(ig.followers_count || 0)} seguidores · vinculado a ${p.name}`, lupa: true });
       }
-      let lupa = await P.getPref('lupaIgId');
+      let lupa = await P.getPref(k.lupa);
       const firstIg = items.find(i => i.lupa);
-      if (!lupa && firstIg) { lupa = firstIg.id; await P.setPref('lupaIgId', lupa); }
+      if ((!lupa || !items.some(i => i.lupa && i.id === lupa)) && firstIg) { lupa = firstIg.id; await P.setPref(k.lupa, lupa); }
       for (const a of ads) items.push({ platform: 'meta_ads', name: a.name, id: a.id, key: 'adAccountId', sub: `${a.id} · ${a.currency || ''}${a.account_status !== 1 ? ' · inactiva' : ''}` });
       out.innerHTML = `<p class="small callout">${esc(note)} Instagram y Facebook usan el token de cada Página, que no vence; solo los anuncios dependen de este token.</p><p class="small">Conectado como <b>${esc(me.name)}</b>. ${items.length ? 'Agrega las cuentas que quieras seguir:' : 'No encontré Páginas, Instagram ni cuentas publicitarias con ese token: revisa los permisos.'}</p>
         ${items.map(i => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--border)">${platBadge(i.platform)}<div style="flex:1"><b>${esc(i.name)}</b><div class="muted small">${esc(i.sub)}</div></div>
-          ${i.lupa ? (i.id === lupa ? '<span class="badge info" title="Desde esta cuenta se miden las cuentas públicas y competidores">🔍 lupa</span>' : `<button class="btn sm ghost" data-act="set-lupa" data-id="${esc(i.id)}">Usar como lupa</button>`) : ''}
-          ${exists(i.key, i.id) ? '<span class="badge pass">Agregada</span>' : `<button class="btn sm" data-act="meta-add" data-platform="${i.platform}" data-name="${esc(i.name)}" data-key="${i.key}" data-id="${esc(i.id)}">Agregar</button>`}</div>`).join('')}
+          ${i.lupa ? (i.id === lupa ? '<span class="badge info" title="Desde esta cuenta se miden las cuentas públicas y competidores">🔍 lupa</span>' : `<button class="btn sm ghost" data-act="set-lupa" data-conn="${connId}" data-id="${esc(i.id)}">Usar como lupa</button>`) : ''}
+          ${exists(i.key, i.id) ? '<span class="badge pass">Agregada</span>' : `<button class="btn sm" data-act="meta-add" data-conn="${connId}" data-client="${esc(conn.clientId || '')}" data-platform="${i.platform}" data-name="${esc(i.name)}" data-key="${i.key}" data-id="${esc(i.id)}">Agregar</button>`}</div>`).join('')}
         ${firstIg ? '<p class="muted small" style="margin-top:8px">🔍 La <b>cuenta lupa</b> es tu Instagram profesional desde el que Pulso consulta, por la vía oficial de Meta, los datos públicos de cuentas que no administras (la del banco, competidores). No necesitas iniciar sesión en ellas.</p>' : '<p class="muted small" style="margin-top:8px">Para medir cuentas ajenas por la vía oficial necesitas al menos un Instagram profesional tuyo vinculado a una Página (será tu "cuenta lupa").</p>'}`;
     } catch (e) {
       const msg = e.code === 190
@@ -1144,10 +1190,15 @@
     const t = today();
     if (a.platform === 'instagram') {
       let pub = null, why = '';
-      const [lupa, token] = await Promise.all([P.getPref('lupaIgId'), P.getSecret('meta_token')]);
-      const lupaPageTok = lupa ? await P.getSecret('meta_igpage_' + lupa) : '';
-      if (lupa && (token || lupaPageTok)) {
-        try { const lupaTok = await P.getSecret('meta_igpage_' + lupa); pub = C.normalizeInstagramPublic(await (await metaClient(lupaTok || undefined)).discoverInstagram(lupa, user)); }
+      const conns = (await metaConns()).sort((x, y) => (y.clientId === a.clientId) - (x.clientId === a.clientId));
+      for (const c of conns) {
+        if (pub) break;
+        const k = connKeys(c.id);
+        const [lupa, token] = await Promise.all([P.getPref(k.lupa), P.getSecret(k.token)]);
+        if (!lupa) continue;
+        const lupaTok = (await P.getSecret('meta_igpage_' + lupa)) || token;
+        if (!lupaTok) continue;
+        try { pub = C.normalizeInstagramPublic(await (await metaClient(lupaTok)).discoverInstagram(lupa, user)); }
         catch (e) { why = e.message; }
       }
       if (!pub) {
@@ -1227,8 +1278,8 @@
         if (!quiet) toast(`${a.name}: ${M.compact(user.follower_count || 0)} seguidores · ${d.posts.length} videos actualizados.`);
         throw null; // listo, sin pasar por Meta
       }
-      const client = await metaClient().catch(() => null); // Instagram/Facebook pueden ir solo con tokens de página
-      const need = () => { if (!client) throw new Error('Falta el token de Meta en Ajustes.'); return client; };
+      const client = await metaClientFor(a).catch(() => null); // Instagram/Facebook pueden ir solo con tokens de página
+      const need = () => { if (!client) throw new Error('Falta el token de Meta de esta cuenta (Ajustes → Meta).'); return client; };
       let res;
       if (a.platform === 'instagram' && a.meta.igId) {
         // El token de la Página vinculada no vence: se usa antes que el token personal
@@ -1308,7 +1359,21 @@
     'edit-client': b => { const c = S.client((b && b.dataset.id) || ui.client); if (c) clientModal(c); },
     'open-client': b => { ui.client = b.dataset.id; P.setPref('client', ui.client); go('resumen'); },
     'add-competitor': () => accountModal({ role: 'competidor', source: 'public' }),
-    'set-lupa': async b => { await P.setPref('lupaIgId', b.dataset.id); toast('Cuenta lupa actualizada.'); metaDiscover(); },
+    'set-lupa': async b => { await P.setPref(connKeys(b.dataset.conn).lupa, b.dataset.id); toast('Cuenta lupa actualizada.'); metaDiscover(b.dataset.conn); },
+    'meta-conn-add': async () => {
+      const list = await metaConns();
+      const cl = S.client(ui.client);
+      list.push({ id: 'c' + Date.now().toString(36), name: cl ? cl.name : 'Nueva conexión', clientId: cl ? cl.id : '' });
+      await saveMetaConns(list); render();
+    },
+    'meta-conn-del': async b => {
+      const list = await metaConns(), c = list.find(x => x.id === b.dataset.conn);
+      const used = S.state.accounts.filter(a => connOf(a) === b.dataset.conn).length;
+      if (!c || !confirm(`¿Quitar la conexión "${c.name}"?${used ? ` ${used} cuenta(s) la usan y dejarán de sincronizar hasta que las conectes con otra.` : ''}`)) return;
+      const k = connKeys(c.id);
+      await P.setSecret(k.token, ''); await P.setSecret(k.secret, '');
+      await saveMetaConns(list.filter(x => x.id !== c.id)); render();
+    },
     'measure-all': async () => { for (const a of visibleAccounts().filter(x => x.source === 'public')) await syncAccount(a, null, true); toast('Mediciones actualizadas.'); },
     'go-settings': () => go('ajustes'),
     'go-goals': () => go('metas'),
@@ -1406,18 +1471,19 @@
     },
     'choose-folder': async () => { const r = await P.chooseFolder(); if (r && !r.cancelled) { await S.load(); toast('Carpeta de datos actualizada.'); render(); } },
     'reload': async () => { await S.refresh(); toast('Datos recargados.'); render(); },
-    'meta-discover': () => metaDiscover(),
+    'meta-discover': b => metaDiscover(b.dataset.conn),
     'meta-add': b => {
-      const meta = { [b.dataset.key]: b.dataset.id };
+      const meta = { [b.dataset.key]: b.dataset.id, conn: b.dataset.conn || 'default' };
+      const clientId = b.dataset.client || undefined;
       const handle = b.dataset.platform === 'instagram' ? b.dataset.name : '';
       const dup = S.findDuplicate({ platform: b.dataset.platform, handle, name: b.dataset.name, meta });
       if (dup) {
         // Ya estaba (por ejemplo medida sin sesión): se conecta a Meta en vez de duplicarla
-        S.updateAccount(dup.id, { meta: Object.assign({}, dup.meta, meta), source: undefined });
+        S.updateAccount(dup.id, { meta: Object.assign({}, dup.meta, meta), source: undefined, clientId: dup.clientId || clientId });
         b.outerHTML = '<span class="badge pass">Conectada</span>'; renderNav(); toast(`${dup.name} ya existía: ahora queda conectada a Meta.`);
         return;
       }
-      S.addAccount({ platform: b.dataset.platform, name: b.dataset.name, handle: b.dataset.platform === 'instagram' ? b.dataset.name : '', owner: ui.person === 'Todos' ? S.state.people[0] : ui.person, meta });
+      S.addAccount({ platform: b.dataset.platform, name: b.dataset.name, handle, owner: ui.person === 'Todos' ? S.state.people[0] : ui.person, meta, clientId });
       b.outerHTML = '<span class="badge pass">Agregada</span>'; renderNav(); toast(`${b.dataset.name} agregada. Ábrela y pulsa Sincronizar.`);
     },
     'save-tt': async () => {
@@ -1461,8 +1527,10 @@
     await S.load();
     // Primera vez con clientes: proponer la organización de las cuentas que ya existen
     if (!(await P.getPref('orgDismissed')) && S.state.accounts.some(a => !a.demo && (!a.clientId || !S.client(a.clientId)))) setTimeout(() => organizeModal(true), 400);
-    const exp = +(await P.getPref('metaTokenExp') || 0);
-    if (exp && exp - Date.now() < 7 * 86400000) setTimeout(() => toast(exp < Date.now() ? 'El token de Meta venció: los anuncios no se sincronizan. Instagram y Facebook siguen con sus tokens de página.' : `El token de Meta vence el ${new Date(exp).toLocaleDateString('es-DO')}. Pega uno nuevo en Ajustes (se alarga solo).`), 1200);
+    for (const c of await metaConns()) {
+      const exp = +(await P.getPref(connKeys(c.id).exp) || 0);
+      if (exp && exp - Date.now() < 7 * 86400000) setTimeout(() => toast(exp < Date.now() ? `El token de Meta "${c.name}" venció: sus anuncios no se sincronizan (Instagram y Facebook siguen con tokens de página).` : `El token de Meta "${c.name}" vence el ${new Date(exp).toLocaleDateString('es-DO')}. Pega uno nuevo en Ajustes (se alarga solo).`), 1200);
+    }
     if (S.lastDeduped) setTimeout(() => toast(`Se unieron ${S.lastDeduped} cuenta(s) duplicada(s) sin perder datos.`), 600);
     const savedClient = await P.getPref('client');
     if (savedClient) ui.client = savedClient;

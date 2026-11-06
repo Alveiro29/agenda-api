@@ -89,6 +89,14 @@ const assert = require('node:assert/strict');
   assert.equal(await page.textContent('#title'), 'Competidor A · Instagram', 'abre la cuenta existente');
   assert.equal(await page.evaluate(() => PulsoApp.S.state.accounts.filter(a => (a.handle || '').toLowerCase().includes('competidor.a')).length), 1);
 
+  // Varias conexiones de Meta (una por app/cliente)
+  await page.click('[data-nav=ajustes]');
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('.conn').count(), 1);
+  await page.click('[data-act=meta-conn-add]');
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('.conn').count(), 2, 'se agrega una segunda conexión');
+
   // Planificador
   await page.click('[data-nav=estratega]');
   await page.click('[data-act=plan]');
