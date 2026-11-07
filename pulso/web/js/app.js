@@ -179,7 +179,7 @@
   ];
   function renderNav() {
     const accs = visibleAccounts();
-    const item = a => `<button class="nav-item ${(ui.view === 'cuenta' || ui.view === 'competidor') && ui.accountId === a.id ? 'active' : ''}" data-account="${a.id}" title="${a.source === 'public' ? 'Medida con datos públicos' : ''}"><span class="dot" style="background:${plat(a.platform).color}"></span><span class="grow">${esc(a.name)}</span>${a.source === 'public' ? '<span class="ico small" aria-label="pública">◌</span>' : ''}</button>`;
+    const item = a => `<button class="nav-item ${(ui.view === 'cuenta' || ui.view === 'competidor') && ui.accountId === a.id ? 'active' : ''}" data-account="${a.id}" title="${a.source === 'public' ? 'Medida con datos públicos' : ''}"><span class="dot" style="background:${plat(a.platform).color}"></span><span class="grow">${esc(a.name)}</span>${a.source === 'public' ? '<span class="ico small" aria-label="pública">◌</span>' : ''}<span class="kebab" role="button" tabindex="0" data-menu="${a.id}" aria-label="Opciones de la cuenta" title="Opciones">⋯</span></button>`;
     const block = list => {
       const own = list.filter(a => a.role !== 'competidor'), comps = list.filter(a => a.role === 'competidor');
       return own.map(item).join('') + (comps.length ? `<div class="nav-sec" style="padding-top:4px">Competidores</div>` + comps.map(item).join('') : '');
@@ -466,7 +466,7 @@
     const ser = A.dailySeries(S.rows(a.id), a.platform, sparkKey, c.from, c.to).map(p => ({ y: p.value }));
     const diag = diagOf(a, S.rows(a.id), S.state.posts[a.id])[0];
     return `<div class="card acc-card" data-act="open-account" data-id="${a.id}" tabindex="0">
-      <div class="acc-head">${platBadge(a.platform)}<span class="name">${esc(a.name)}</span>${a.source === 'public' ? '<span class="badge" title="Medida sin iniciar sesión">pública</span>' : ''}<span class="muted small">${esc(a.owner || '')}</span></div>
+      <div class="acc-head">${platBadge(a.platform)}<span class="name">${esc(a.name)}</span>${a.source === 'public' ? '<span class="badge" title="Medida sin iniciar sesión">pública</span>' : ''}<span class="muted small">${esc(a.owner || '')}</span><span class="kebab" role="button" tabindex="0" data-menu="${a.id}" aria-label="Opciones de la cuenta" title="Opciones">⋯</span></div>
       <div class="acc-stats">${keys.map(k => `<div><b>${fmtM(k, c.current[k])}</b><small>${esc(M.byKey[k].label)}</small><div class="small">${deltaHtml(k, c.delta[k])}</div></div>`).join('')}</div>
       <div class="acc-foot">${CH.spark(ser, { color: plat(a.platform).color })}${diag ? `<span class="badge ${diag.severity}" title="${esc(diag.detail)}">${esc(diag.title)}</span>` : ''}</div>
     </div>`;
@@ -476,6 +476,64 @@
     return `<div class="insight ${d.severity}"><h4><span class="badge ${d.severity}">${sevLabel}</span>${esc(d.title)}${d.metric ? ` <button class="info-btn" data-info="${d.metric}" aria-label="Sobre la métrica">ⓘ</button>` : ''}</h4>
       <p>${ui.view !== 'cuenta' ? `<b>${esc(d.account)}:</b> ` : ''}${esc(d.detail)}</p><ul>${d.actions.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
   }
+
+  // ── Menú ⋯ de cada cuenta (en cualquier parte de la app) ───
+  let menuEl = null;
+  function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
+  function accountMenu(id, anchor) {
+    closeMenu();
+    const a = S.account(id);
+    if (!a) return;
+    const comp = a.role === 'competidor';
+    const item = (act, label, extra = '') => `<button data-mact="${act}" ${extra}>${label}</button>`;
+    menuEl = document.createElement('div');
+    menuEl.className = 'pop-menu';
+    menuEl.setAttribute('role', 'menu');
+    menuEl.innerHTML = `<div class="pm-title">${esc(a.name)}</div>
+      ${item('open', comp ? 'Abrir ficha' : 'Abrir')}
+      ${canMeasure(a) ? item('sync', a.source === 'public' ? '↻ Medir ahora' : '↻ Sincronizar ahora') : ''}
+      ${item('edit', 'Editar configuración')}
+      ${S.state.clients.length ? `<div class="pm-sep"></div><div class="pm-label">Mover a cliente</div>${S.state.clients.map(c => item('client', `${c.id === a.clientId ? '✓ ' : ''}${esc(c.name)}`, `data-client="${c.id}"`)).join('')}${a.clientId ? item('client', 'Sin cliente', 'data-client=""') : ''}` : ''}
+      <div class="pm-sep"></div>
+      ${item('role', comp ? 'Marcar como cuenta propia' : 'Marcar como competidor')}
+      ${item('delete', 'Eliminar cuenta…', 'class="danger"')}`;
+    document.body.appendChild(menuEl);
+    const r = anchor.getBoundingClientRect();
+    const w = menuEl.offsetWidth, h = menuEl.offsetHeight;
+    menuEl.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+    menuEl.style.top = (r.bottom + 4 + h > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+    menuEl.addEventListener('click', e => {
+      const b = e.target.closest('[data-mact]'); if (!b) return;
+      closeMenu();
+      const act = b.dataset.mact;
+      if (act === 'open') openAccount(id);
+      else if (act === 'sync') syncAccount(a);
+      else if (act === 'edit') go('cuenta', { accountId: id, tab: 'datos' });
+      else if (act === 'client') { S.updateAccount(id, { clientId: b.dataset.client || undefined }); toast(b.dataset.client ? `Movida a ${clientName(b.dataset.client)}.` : 'Ahora está sin cliente.'); render(); }
+      else if (act === 'role') {
+        S.updateAccount(id, comp ? { role: 'propia' } : { role: 'competidor', source: a.source || 'public' });
+        toast(comp ? 'Ahora es una cuenta propia.' : 'Ahora es un competidor.');
+        if (ui.accountId === id && (ui.view === 'cuenta' || ui.view === 'competidor')) openAccount(id); else render();
+      } else if (act === 'delete') {
+        if (!confirm(`¿Eliminar "${a.name}" y todos sus datos (días, publicaciones, metas)? No se puede deshacer.`)) return;
+        S.removeAccount(id);
+        toast('Cuenta eliminada.');
+        if (ui.accountId === id && (ui.view === 'cuenta' || ui.view === 'competidor')) go('resumen'); else render();
+      }
+    });
+  }
+  // Se captura antes que los demás clics para que el ⋯ no abra la cuenta
+  document.addEventListener('click', e => {
+    const k = e.target.closest('.kebab');
+    if (k) { e.preventDefault(); e.stopPropagation(); accountMenu(k.dataset.menu, k); return; }
+    if (menuEl && !menuEl.contains(e.target)) closeMenu();
+  }, true);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeMenu();
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('kebab')) { e.preventDefault(); e.stopPropagation(); accountMenu(e.target.dataset.menu, e.target); }
+  }, true);
+  window.addEventListener('resize', closeMenu);
+  $('#view').addEventListener('scroll', closeMenu);
 
   // ── Competencia ─────────────────────────────────────────────
   function openAccount(id) {
@@ -515,7 +573,7 @@
         <td class="r">${st.net == null ? '—' : (st.net > 0 ? '+' : '') + M.compact(st.net)} <span class="muted small">${pctTxt(st.growth)}</span></td>
         <td class="r">${st.ppw == null ? '—' : st.ppw.toFixed(1)}</td>
         <td class="r">${M.format(st.er, 'pct', { decimals: 2 })}${vs != null ? ` <span class="delta ${vs > 0 ? 'down' : 'up'}" title="frente a tu cuenta de ${esc(plat(a.platform).label)}">${vs > 0 ? '▲' : '▼'} ${(Math.abs(vs) * 100).toFixed(2)} pp</span>` : ''}</td>
-        <td class="r muted small">${st.lastAt ? new Date(st.lastAt).toLocaleDateString('es-DO') : '—'}</td><td class="r">›</td></tr>`;
+        <td class="r muted small">${st.lastAt ? new Date(st.lastAt).toLocaleDateString('es-DO') : '—'}</td><td class="r"><span class="kebab" role="button" tabindex="0" data-menu="${a.id}" aria-label="Opciones de la cuenta" title="Opciones">⋯</span></td></tr>`;
     }).join('');
     const clientSel = showClient ? `<select id="qc-client">${S.state.clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>` : '';
     return `<div class="card section"><div class="section-h"><h2>Competencia</h2><span class="muted small">${periodText()} · solo datos públicos, comparables con tus cuentas · toca un competidor para ver su ficha</span></div>
@@ -550,7 +608,7 @@
     const st = compStats(a), peer = ownPeer(a), ps = peer ? compStats(peer) : null;
     setHeader(a.name, `Competidor · ${plat(a.platform).label}${a.handle ? ' · ' + a.handle : ''}${a.clientId ? ' · ' + clientName(a.clientId) : ''}`,
       periodSeg() + `<button class="btn" data-act="sync" data-id="${a.id}" ${ui.syncing[a.id] ? 'disabled' : ''}>${ui.syncing[a.id] ? 'Midiendo…' : '↻ Medir ahora'}</button>`
-      + `<button class="btn" data-act="comp-copy" data-id="${a.id}">Copiar resumen</button><button class="btn ghost" data-act="open-account-raw" data-id="${a.id}">Datos y configuración</button>`);
+      + `<button class="btn" data-act="comp-copy" data-id="${a.id}">Copiar resumen</button><button class="btn ghost" data-act="open-account-raw" data-id="${a.id}">Datos y configuración</button><span class="btn kebab-btn"><span class="kebab" role="button" tabindex="0" data-menu="${a.id}" aria-label="Opciones de la cuenta" title="Opciones">⋯</span></span>`);
     const vsTxt = (mine, theirs, unit, better = 'up') => {
       if (mine == null || theirs == null) return '';
       const d = theirs - mine;
@@ -688,7 +746,7 @@
         ${list.map(x => `<tr><td><a href="#" data-act="open-account" data-id="${x.a.id}"><b>${esc(x.a.name)}</b></a> <span class="badge ${x.a.role === 'competidor' ? 'warn' : 'pass'}">${x.a.role === 'competidor' ? 'competidor' : 'propia'}</span>${x.measures < 2 && x.a.source === 'public' ? ' <span class="muted small" title="Hacen falta al menos 2 mediciones en días distintos">· 1 medición</span>' : ''}</td>
           <td class="r">${M.compact(x.followers ?? 0)}</td>${cell(list, x, 'net', x.net == null ? '—' : (x.net > 0 ? '+' : '') + M.compact(x.net))}${cell(list, x, 'growth', M.format(x.growth, 'pct', { decimals: 2 }))}
           ${cell(list, x, 'ppw', x.ppw == null ? '—' : x.ppw.toFixed(1))}${cell(list, x, 'perPost', x.perPost == null ? '—' : M.compact(Math.round(x.perPost)))}${cell(list, x, 'er', M.format(x.er, 'pct', { decimals: 2 }))}
-          <td class="r">${p === 'instagram' || p === 'facebook' ? `<a href="#" data-act="open-url" data-url="${esc(adLib(x.a.name))}" title="Biblioteca de anuncios de Meta: qué anuncios tiene activos">Anuncios activos ↗</a>` : ''}</td></tr>`).join('')}</tbody></table></div>
+          <td class="r">${p === 'instagram' || p === 'facebook' ? `<a href="#" data-act="open-url" data-url="${esc(adLib(x.a.name))}" title="Biblioteca de anuncios de Meta: qué anuncios tiene activos">Anuncios activos ↗</a>` : ''} <span class="kebab" role="button" tabindex="0" data-menu="${x.a.id}" aria-label="Opciones de la cuenta" title="Opciones">⋯</span></td></tr>`).join('')}</tbody></table></div>
         ${list.filter(x => x.er != null).length > 1 ? `<h3 style="margin:14px 0 8px">Interacción por post (me gusta + comentarios ÷ seguidores)</h3>${CH.bars(list.filter(x => x.er != null).sort((a, b) => b.er - a.er).map(x => ({ label: x.a.name, value: x.er, color: x.a.role === 'competidor' ? 'var(--series-prev)' : 'var(--series-1)' })), { unit: 'pct', decimals: 2 })}` : ''}
       </div>`;
     }).join('') + `<p class="muted small">Para comparar de forma justa se usa solo lo que es público para todos: seguidores, publicaciones, me gusta y comentarios (en TikTok, me gusta). El crecimiento se arma con las fotos diarias: abre Pulso a diario o pulsa "Medir públicas". "Anuncios activos" abre la Biblioteca de anuncios de Meta, pública y sin iniciar sesión.</p>`;
@@ -821,7 +879,7 @@
     const linked = canMeasure(a);
     const verb = a.source === 'public' ? 'Medir ahora' : 'Sincronizar';
     setHeader(a.name, `${plat(a.platform).label}${a.handle ? ' · ' + a.handle : ''}${a.role === 'competidor' ? ' · competidor' : a.owner ? ' · ' + a.owner : ''}${a.source === 'public' ? ' · datos públicos' : ''}`,
-      periodSeg() + (linked ? `<button class="btn" data-act="sync" data-id="${a.id}" ${ui.syncing[a.id] ? 'disabled' : ''}>${ui.syncing[a.id] ? 'Midiendo…' : '↻ ' + verb}</button>` : '') + (a.role === 'competidor' ? '' : `<button class="btn" data-act="new-goal">＋ Meta</button>`));
+      periodSeg() + (linked ? `<button class="btn" data-act="sync" data-id="${a.id}" ${ui.syncing[a.id] ? 'disabled' : ''}>${ui.syncing[a.id] ? 'Midiendo…' : '↻ ' + verb}</button>` : '') + (a.role === 'competidor' ? '' : `<button class="btn" data-act="new-goal">＋ Meta</button>`) + `<span class="btn kebab-btn"><span class="kebab" role="button" tabindex="0" data-menu="${a.id}" aria-label="Opciones de la cuenta" title="Opciones">⋯</span></span>`);
     const tabs = [['metricas', 'Métricas'], ['tendencias', 'Tendencias'], ['contenido', 'Contenido'], ['diagnostico', 'Diagnóstico'], ['datos', 'Datos e importación']]
       .filter(([k]) => k !== 'contenido' || isSocial(a.platform)).concat(a.platform === 'meta_ads' ? [['campanas', 'Campañas']] : []);
     const rows = S.rows(a.id);

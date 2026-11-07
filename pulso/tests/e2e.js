@@ -143,6 +143,20 @@ const assert = require('node:assert/strict');
   await page.waitForTimeout(100);
   assert.ok(!(await page.textContent('[data-act=pick-range]')).includes('–'), 'volver a 28 días quita el rango');
 
+  // Menú ⋯: mover de cliente y eliminar desde cualquier lugar
+  await page.click('[data-nav=resumen]');
+  const nAccs = await page.evaluate(() => PulsoApp.S.state.accounts.length);
+  await page.click('.acc-card .kebab >> nth=0');
+  assert.equal(await page.locator('.pop-menu').count(), 1, 'se abre el menú');
+  assert.equal(await page.locator('#title').textContent() !== 'Marca · Instagram', true, 'el ⋯ no abre la cuenta');
+  page.once('dialog', d => d.accept());
+  await page.click('.pop-menu [data-mact=delete]');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => PulsoApp.S.state.accounts.length), nAccs - 1, 'cuenta eliminada');
+  await page.click('#nav .nav-item[data-account] .kebab >> nth=0', { force: true });
+  assert.ok(await page.locator('.pop-menu [data-mact=role]').count() > 0, 'menú también en la barra lateral');
+  await page.keyboard.press('Escape');
+
   // Planificador
   await page.click('[data-nav=estratega]');
   await page.click('[data-act=plan]');

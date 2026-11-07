@@ -275,3 +275,20 @@ tr:hover td { background: var(--surface-2); }
 .lock-box { text-align: center; max-width: 340px; padding: 24px; }
 .lock-box h2 { margin-bottom: 6px; }
 .lock-box .btn { margin-top: 14px; }
+
+/* ── Menú ⋯ de cuentas ── */
+.kebab { display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 4px; border-radius: 6px; color: var(--muted); font-weight: 700; letter-spacing: 1px; cursor: default; flex: none; }
+.kebab:hover, .kebab:focus-visible { background: rgba(127,127,127,.18); color: var(--text); outline: none; }
+.nav-item .kebab { visibility: hidden; color: inherit; }
+.nav-item:hover .kebab, .nav-item.active .kebab, .nav-item:focus-within .kebab { visibility: visible; }
+.acc-head .kebab { margin-left: 2px; }
+.kebab-btn { padding: 2px 6px; }
+.kebab-btn .kebab { color: var(--text); }
+.pop-menu { position: fixed; z-index: 40; min-width: 220px; max-width: 280px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 4px; }
+.pop-menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 6px; cursor: default; color: var(--text); }
+.pop-menu button:hover { background: var(--accent); color: #fff; }
+.pop-menu button.danger { color: var(--bad); }
+.pop-menu button.danger:hover { background: var(--bad); color: #fff; }
+.pm-title { font-weight: 600; font-size: 12px; padding: 6px 10px 4px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-label { font-size: 11px; color: var(--muted); padding: 4px 10px 2px; }
+.pm-sep { height: 1px; background: var(--border); margin: 4px 2px; }
