@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   // Los fallos de red (sin internet en el entorno de pruebas) no son errores de la app
-  page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource|blocked by CORS policy/.test(m.text())) errors.push(m.text()); });
   await page.goto('file://' + path.join(__dirname, '..', 'web', 'index.html'));
 
   // Cuentas creadas antes de existir los clientes: el asistente las organiza solo
