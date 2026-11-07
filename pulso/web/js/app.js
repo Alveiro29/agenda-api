@@ -1274,7 +1274,7 @@
   // ── Ajustes ─────────────────────────────────────────────────
   async function viewAjustes(v) {
     setHeader('Ajustes', '', '');
-    const [loc, metaTok, aiKey, theme, ttKey, ttSecret, ttRedirect, metaAppId, metaAppSecret, metaExp] = await Promise.all([P.dataLocation(), P.getSecret('meta_token'), P.getSecret('anthropic_key'), P.getPref('theme'), P.getSecret('tiktok_client_key'), P.getSecret('tiktok_client_secret'), P.getPref('tiktokRedirect'), P.getPref('metaAppId'), P.getSecret('meta_app_secret'), P.getPref('metaTokenExp')]);
+    const [loc, metaTok, aiKey, theme, ttKey, ttSecret, ttRedirect, metaAppId, metaAppSecret, metaExp, touchLock] = await Promise.all([P.dataLocation(), P.getSecret('meta_token'), P.getSecret('anthropic_key'), P.getPref('theme'), P.getSecret('tiktok_client_key'), P.getSecret('tiktok_client_secret'), P.getPref('tiktokRedirect'), P.getPref('metaAppId'), P.getSecret('meta_app_secret'), P.getPref('metaTokenExp'), P.getPref('touchLock')]);
     const st = S.state;
     const metaConnsData = await Promise.all((await metaConns()).map(async c => {
       const k = connKeys(c.id);
@@ -1328,6 +1328,8 @@
         <div class="row end"><button class="btn" data-act="demo-load">Cargar demo</button><button class="btn danger" data-act="demo-remove">Quitar demo</button></div></div>
       <div class="card"><h2>Respaldo</h2><p class="muted small">Exporta todo a un archivo JSON (sin tokens) o restaura uno.</p>
         <div class="row"><button class="btn" data-act="export">Exportar respaldo</button><input type="file" id="backup-file" accept=".json,application/json"><button class="btn" data-act="import-backup">Restaurar</button></div>
+        ${P.native ? `<h2 style="margin-top:16px">Seguridad</h2><label class="row small" style="margin-top:8px"><input type="checkbox" id="touch-lock" ${touchLock === 'off' ? '' : 'checked'}> Pedir la huella (Touch ID) al abrir Pulso</label>
+          <p class="muted small">Las claves (tokens) se guardan en un archivo que solo tu usuario de la Mac puede leer; la huella evita que otra persona con tu Mac abierta las use.</p>` : ''}
         <h2 style="margin-top:16px">Apariencia</h2><div class="seg" style="margin-top:8px">${[['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([k, l]) => `<button data-act="theme" data-theme="${k}" class="${(theme || 'auto') === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     </div>`;
   }
@@ -1733,6 +1735,7 @@
       try { const s = JSON.parse(text); if (!s.accounts) throw new Error('formato'); if (confirm('¿Reemplazar todos los datos actuales con el respaldo?')) { S.replace(s); toast('Respaldo restaurado.'); go('resumen'); } }
       catch (e) { toast('El archivo no es un respaldo válido de Pulso.', true); }
     },
+    'touch-lock': () => {},
     'theme': b => { applyTheme(b.dataset.theme); P.setPref('theme', b.dataset.theme); render(); },
   };
 
@@ -1747,14 +1750,34 @@
     const map = { 1: 'resumen', 2: 'metas', 3: 'comparativa', 4: 'estratega', 5: 'seo', 6: 'academia', 7: 'ajustes' };
     if (map[e.key]) { e.preventDefault(); go(map[e.key]); }
   });
+  $('#view').addEventListener('change', e => {
+    if (e.target.id === 'touch-lock') { P.setPref('touchLock', e.target.checked ? 'on' : 'off'); toast(e.target.checked ? 'Pulso pedirá la huella al abrirse.' : 'Pulso ya no pedirá la huella al abrirse.'); }
+  });
   $('#view').addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.classList.contains('acc-card')) go('cuenta', { accountId: e.target.dataset.id });
     if (e.key === 'Enter' && e.target.classList.contains('client-card')) ACTIONS['open-client'](e.target);
   });
 
   // ── Arranque ────────────────────────────────────────────────
+  /* Bloqueo con huella al abrir (opcional, activado por defecto en la Mac) */
+  async function lockGate() {
+    if (!P.native || (await P.getPref('touchLock')) === 'off') return;
+    const shade = document.createElement('div');
+    shade.className = 'lock-shade';
+    shade.innerHTML = `<div class="lock-box"><div class="brand-mark" style="width:56px;height:56px;margin:0 auto 12px"><svg viewBox="0 0 24 24" width="30" height="30"><path d="M2 13h4l2.5-6 4 11 3-8 1.5 3H22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h2>Pulso está bloqueado</h2><p class="muted small">Usa tu huella (o la contraseña de la Mac) para ver tus cuentas y claves.</p><button class="btn primary">Desbloquear</button></div>`;
+    document.body.appendChild(shade);
+    const tryUnlock = async () => {
+      const r = await P.unlock('desbloquear tus cuentas y claves de Pulso').catch(() => ({ ok: false }));
+      if (r && r.ok) { shade.remove(); return true; }
+      return false;
+    };
+    while (!(await tryUnlock())) await new Promise(res => $('button', shade).addEventListener('click', res, { once: true }));
+  }
+
   (async function boot() {
     applyTheme(await P.getPref('theme'));
+    await lockGate();
     try { ui.claudePath = await P.claudeCodePath(); } catch (e) { ui.claudePath = ''; }
     await S.load();
     // Primera vez con clientes: proponer la organización de las cuentas que ya existen

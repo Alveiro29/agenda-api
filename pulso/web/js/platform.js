@@ -44,7 +44,7 @@
   const checked = new Set();
   function loadVault() {
     if (vault) return Promise.resolve(vault);
-    if (!vaultLoading) vaultLoading = call('secretGet', { key: VAULT }).then(r => {
+    if (!vaultLoading) vaultLoading = call('vaultRead').then(r => {
       try { vault = JSON.parse((r && r.value) || '{}') || {}; } catch (e) { vault = {}; }
       return vault;
     });
@@ -52,7 +52,7 @@
   }
   function saveVault() {
     const text = JSON.stringify(vault);
-    vaultWrite = vaultWrite.then(() => call('secretSet', { key: VAULT, value: text })).catch(() => {});
+    vaultWrite = vaultWrite.then(() => call('vaultWrite', { text })).catch(() => {});
     return vaultWrite;
   }
   async function vaultGet(k) {
@@ -92,6 +92,8 @@
     },
     async chooseFolder() { return native ? call('chooseFolder') : { cancelled: true, unsupported: true }; },
     async dataLocation() { return native ? call('dataLocation') : { path: 'localStorage (navegador)' }; },
+    /* Touch ID (o contraseña de la Mac) → { ok } ; en el navegador siempre ok */
+    async unlock(reason) { return native ? call('unlock', { reason }) : { ok: true, skipped: true }; },
     async getSecret(k) { return native ? vaultGet(k) : LS.get('pulso:secret:' + k) || ''; },
     async setSecret(k, v) { return native ? vaultSet(k, v) : LS.set('pulso:secret:' + k, v || null); },
     async getPref(k) { return native ? (await call('prefGet', { key: k })).value ?? null : LS.get('pulso:pref:' + k); },

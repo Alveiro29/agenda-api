@@ -17,6 +17,7 @@
 import Cocoa
 import WebKit
 import Security
+import LocalAuthentication
 
 enum Keychain {
     static let service = "app.pulso.metricas"
@@ -137,6 +138,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     // MARK: Archivo de datos
 
+    // MARK: Bóveda de claves (archivo solo legible por este usuario) y Touch ID
+    //
+    // El Llavero pide la contraseña cada vez que la app se recompila (la firma
+    // local cambia) y no permite usar la huella sin una cuenta de desarrollador
+    // de Apple. Por eso las claves viven en Application Support/Pulso/claves.json
+    // con permisos 600 (solo tu usuario) y la app se desbloquea con Touch ID.
+
+    var vaultURL: URL {
+        let dir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Pulso", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        return dir.appendingPathComponent("claves.json")
+    }
+
+    func vaultRead() -> String {
+        if let text = try? String(contentsOf: vaultURL, encoding: .utf8) { return text }
+        // Primera vez: se traen las claves que estaban en el Llavero (puede pedir la contraseña una última vez)
+        let old = Keychain.get("__vault") ?? "{}"
+        vaultWrite(old)
+        return old
+    }
+
+    @discardableResult
+    func vaultWrite(_ text: String) -> Bool {
+        let url = vaultURL
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
+        } catch { return false }
+    }
+
+    func unlock(_ reason: String, _ reply: @escaping (Any?, String?) -> Void) {
+        let ctx = LAContext()
+        var err: NSError?
+        // deviceOwnerAuthentication = huella (Touch ID) o, si no hay, la contraseña de la Mac
+        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else {
+            reply(["ok": true, "skipped": true], nil); return
+        }
+        ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, error in
+            DispatchQueue.main.async { reply(["ok": ok, "error": error?.localizedDescription ?? ""], nil) }
+        }
+    }
+
     var dataFolder: URL {
         if let custom = defaults.string(forKey: "dataFolder") { return URL(fileURLWithPath: custom, isDirectory: true) }
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Pulso", isDirectory: true)
@@ -239,6 +283,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         case "writeData": replyHandler(writeData(body), nil)
         case "dataLocation": replyHandler(["path": dataURL.path], nil)
         case "chooseFolder": chooseFolder(replyHandler)
+        case "vaultRead": replyHandler(["value": vaultRead()], nil)
+        case "vaultWrite": replyHandler(["ok": vaultWrite(body["text"] as? String ?? "{}")], nil)
+        case "unlock": unlock(body["reason"] as? String ?? "desbloquear Pulso", replyHandler)
         case "secretGet": replyHandler(["value": Keychain.get(key) ?? ""], nil)
         case "secretSet":
             Keychain.set(key, body["value"] as? String ?? "")

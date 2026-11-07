@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 APP=build/Pulso.app
 rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-FLAGS=(-O -swift-version 5 -framework Cocoa -framework WebKit -framework Security)
+FLAGS=(-O -swift-version 5 -framework Cocoa -framework WebKit -framework Security -framework LocalAuthentication)
 echo "→ Compilando…"
 if swiftc "${FLAGS[@]}" -target arm64-apple-macos12 mac/main.swift -o build/Pulso-arm64 \
   && swiftc "${FLAGS[@]}" -target x86_64-apple-macos12 mac/main.swift -o build/Pulso-x86_64; then
