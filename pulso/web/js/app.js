@@ -1328,8 +1328,9 @@
         <div class="row end"><button class="btn" data-act="demo-load">Cargar demo</button><button class="btn danger" data-act="demo-remove">Quitar demo</button></div></div>
       <div class="card"><h2>Respaldo</h2><p class="muted small">Exporta todo a un archivo JSON (sin tokens) o restaura uno.</p>
         <div class="row"><button class="btn" data-act="export">Exportar respaldo</button><input type="file" id="backup-file" accept=".json,application/json"><button class="btn" data-act="import-backup">Restaurar</button></div>
-        ${P.native ? `<h2 style="margin-top:16px">Seguridad</h2><label class="row small" style="margin-top:8px"><input type="checkbox" id="touch-lock" ${touchLock === 'off' ? '' : 'checked'}> Pedir la huella (Touch ID) al abrir Pulso</label>
-          <p class="muted small">Las claves (tokens) se guardan en un archivo que solo tu usuario de la Mac puede leer; la huella evita que otra persona con tu Mac abierta las use.</p>` : ''}
+        ${P.native ? `<h2 style="margin-top:16px">Seguridad</h2><label class="field" style="margin-top:8px">Pedir la huella (Touch ID) al abrir Pulso<select id="touch-lock">
+            ${[['off', 'Nunca'], ['1', 'Si pasó más de 1 día sin usarlo'], ['7', 'Si pasaron más de 7 días sin usarlo'], ['30', 'Si pasaron más de 30 días sin usarlo'], ['always', 'Siempre']].map(([k, l]) => `<option value="${k}" ${(!touchLock || touchLock === 'on' ? '7' : touchLock) === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <p class="muted small">Las claves (tokens) se guardan en un archivo que solo tu usuario de la Mac puede leer. La huella evita que alguien use Pulso si tu Mac queda abierta mucho tiempo.</p>` : ''}
         <h2 style="margin-top:16px">Apariencia</h2><div class="seg" style="margin-top:8px">${[['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Oscuro']].map(([k, l]) => `<button data-act="theme" data-theme="${k}" class="${(theme || 'auto') === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
     </div>`;
   }
@@ -1751,7 +1752,7 @@
     if (map[e.key]) { e.preventDefault(); go(map[e.key]); }
   });
   $('#view').addEventListener('change', e => {
-    if (e.target.id === 'touch-lock') { P.setPref('touchLock', e.target.checked ? 'on' : 'off'); toast(e.target.checked ? 'Pulso pedirá la huella al abrirse.' : 'Pulso ya no pedirá la huella al abrirse.'); }
+    if (e.target.id === 'touch-lock') { P.setPref('touchLock', e.target.value); toast('Guardado.'); }
   });
   $('#view').addEventListener('keydown', e => {
     if (e.key === 'Enter' && e.target.classList.contains('acc-card')) go('cuenta', { accountId: e.target.dataset.id });
@@ -1759,9 +1760,16 @@
   });
 
   // ── Arranque ────────────────────────────────────────────────
-  /* Bloqueo con huella al abrir (opcional, activado por defecto en la Mac) */
+  /* Bloqueo con huella: solo si pasaron varios días sin usar Pulso
+     (7 por defecto). Opciones: off · 1 · 7 · 30 días · always (cada vez). */
+  async function lockMode() { const m = await P.getPref('touchLock'); return !m || m === 'on' ? '7' : m; }
+  const markUse = () => P.setPref('lastUse', String(Date.now()));
   async function lockGate() {
-    if (!P.native || (await P.getPref('touchLock')) === 'off') return;
+    if (!P.native) return;
+    const mode = await lockMode();
+    const last = +(await P.getPref('lastUse') || 0);
+    const due = mode === 'always' || (mode !== 'off' && last && Date.now() - last > +mode * 86400000);
+    if (!due) { markUse(); return; }
     const shade = document.createElement('div');
     shade.className = 'lock-shade';
     shade.innerHTML = `<div class="lock-box"><div class="brand-mark" style="width:56px;height:56px;margin:0 auto 12px"><svg viewBox="0 0 24 24" width="30" height="30"><path d="M2 13h4l2.5-6 4 11 3-8 1.5 3H22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -1769,7 +1777,7 @@
     document.body.appendChild(shade);
     const tryUnlock = async () => {
       const r = await P.unlock('desbloquear tus cuentas y claves de Pulso').catch(() => ({ ok: false }));
-      if (r && r.ok) { shade.remove(); return true; }
+      if (r && r.ok) { shade.remove(); markUse(); return true; }
       return false;
     };
     while (!(await tryUnlock())) await new Promise(res => $('button', shade).addEventListener('click', res, { once: true }));
@@ -1801,6 +1809,8 @@
     // Trae los cambios de la otra persona cada minuto y al volver a la ventana
     const pull = async () => { if (await S.refresh()) render(); };
     setInterval(pull, 60000);
+    setInterval(markUse, 10 * 60000);
+    window.addEventListener('focus', markUse);
     window.addEventListener('focus', pull);
     let resizeT; window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (ui.view === 'cuenta' && ui.tab === 'tendencias') render(); if (ui.view === 'seo' && ui.seoTab === 'gsc') mountCtrCurve(); }, 200); });
   })();
