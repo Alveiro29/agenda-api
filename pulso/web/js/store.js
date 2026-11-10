@@ -101,7 +101,7 @@
     if (platform === 'web') {
       try { return new URL(/^https?:/i.test(h) ? h : 'https://' + h).host.replace(/^www\./, '').toLowerCase(); } catch (e) { return null; }
     }
-    h = h.replace(/^https?:\/\/(www\.|m\.)?(instagram|tiktok|facebook|linkedin)\.com\/(in\/)?/i, '').replace(/^@/, '').split(/[/?#\s]/)[0];
+    h = h.replace(/^https?:\/\/(www\.|m\.)?(instagram|tiktok|facebook|linkedin|x|twitter)\.com\/(in\/|company\/)?/i, '').replace(/^@/, '').split(/[/?#\s]/)[0];
     return h ? h.toLowerCase() : null;
   }
   function accountKeys(a) {

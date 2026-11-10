@@ -12,6 +12,7 @@
     facebook:  { label: 'Facebook',  short: 'FB', color: '#2a78d6' },
     tiktok:    { label: 'TikTok',    short: 'TT', color: '#1baf7a' },
     linkedin:  { label: 'LinkedIn',  short: 'IN', color: '#6250d6' },
+    x:         { label: 'X',         short: 'X',  color: '#3a3a3c' },
     meta_ads:  { label: 'Meta Ads',  short: 'Ads', color: '#eb6834' },
     web:       { label: 'Sitio web / SEO', short: 'WEB', color: '#eda100' },
   };
@@ -61,26 +62,26 @@
   const METRICS = [
     // ── Audiencia ────────────────────────────────────────────
     { key: 'followers', group: 'Audiencia', label: 'Seguidores', unit: 'n', better: 'up', goal: 'level',
-      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin'],
+      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'],
       compute: t => t.last.followers,
       formula: 'Último valor del período',
       what: 'El tamaño de la audiencia que puede ver tu contenido sin pagar. Es un saldo, no un flujo: nunca se suma día por día.',
       trap: 'Crecer seguidores sin crecer alcance ni interacción es inflar un número que el algoritmo no premia. Mírala junto a "Seguidores por cada 1.000 de alcance".' },
     { key: 'netFollowers', group: 'Audiencia', label: 'Crecimiento neto', unit: 'n', better: 'up', goal: 'cumulative',
-      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin'],
+      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'],
       compute: t => (t.last.followers != null && t.first.followers != null ? t.last.followers - t.firstBase.followers : t.sum.newFollowers || null),
       formula: 'Seguidores al cierre − seguidores al cierre del período anterior',
       what: 'Cuántos seguidores ganaste (menos los que se fueron) en el período.',
       trap: 'Un pico aislado suele venir de un solo post viral o de un sorteo. Revisa si el crecimiento es sostenido semana a semana.' },
     { key: 'growthRate', group: 'Audiencia', label: 'Tasa de crecimiento', unit: 'pct', better: 'up', goal: 'rate',
-      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin'],
+      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'],
       compute: t => (t.last.followers != null && t.firstBase.followers ? (t.last.followers - t.firstBase.followers) / t.firstBase.followers : null),
       formula: 'Crecimiento neto ÷ seguidores al inicio',
       bench: { low: 0.01, good: 0.03, great: 0.06, period: '28 días' },
       what: 'Qué tan rápido crece la cuenta en relación con su tamaño. Permite comparar una cuenta de 2K con una de 200K.',
       trap: 'Las cuentas pequeñas crecen en % mucho más rápido. Compárala contra tu propio histórico antes que contra otras cuentas.' },
     { key: 'followsPer1k', group: 'Audiencia', label: 'Seguidores por cada 1.000 de alcance', unit: 'n', better: 'up', goal: 'rate', decimals: 1,
-      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin'],
+      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'],
       compute: t => {
         const net = t.sum.newFollowers || (t.last.followers != null && t.firstBase.followers != null ? t.last.followers - t.firstBase.followers : null);
         const r = t.sum.reach || t.sum.views;
@@ -109,7 +110,7 @@
       what: 'Cuántas veces en promedio te vio cada persona. En anuncios, entre 1,5 y 3 por semana suele ser sano.',
       trap: 'Por encima de ~3,5–4 en una campaña: fatiga creativa. El CTR cae y el CPM/CPL suben.' },
     { key: 'postsPerWeek', group: 'Distribución', label: 'Publicaciones por semana', unit: 'n', better: 'up', goal: 'rate', decimals: 1,
-      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin'],
+      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'],
       compute: t => (t.sum.posts != null && t.days ? (t.sum.posts / t.days) * 7 : null),
       formula: 'Publicaciones ÷ días × 7',
       bench: { low: 2, good: 4, great: 7 },
@@ -118,22 +119,22 @@
 
     // ── Interacción ──────────────────────────────────────────
     { key: 'engagements', group: 'Interacción', label: 'Interacciones', unit: 'n', better: 'up', goal: 'cumulative',
-      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin'],
+      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'],
       compute: t => t.sum.engagements || sumOf(t, ['likes', 'comments', 'shares', 'saves']),
       formula: 'Me gusta + comentarios + compartidos + guardados',
       what: 'Total de acciones sobre tu contenido.',
       trap: 'No todas valen igual: un guardado o un compartido pesa mucho más para el algoritmo que un me gusta.' },
     { key: 'erReach', group: 'Interacción', label: 'Tasa de interacción (alcance)', unit: 'pct', better: 'up', goal: 'rate',
-      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin'],
+      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'],
       compute: t => div(t.sum.engagements || sumOf(t, ['likes', 'comments', 'shares', 'saves']), t.sum.reach || t.sum.impressions || t.sum.views),
       formula: 'Interacciones ÷ alcance',
       bench: { instagram: { low: 0.02, good: 0.04, great: 0.07 }, facebook: { low: 0.01, good: 0.025, great: 0.05 },
-               tiktok: { low: 0.03, good: 0.06, great: 0.1 }, linkedin: { low: 0.02, good: 0.035, great: 0.06 },
+               tiktok: { low: 0.03, good: 0.06, great: 0.1 }, linkedin: { low: 0.02, good: 0.035, great: 0.06 }, x: { low: 0.005, good: 0.015, great: 0.03 },
                default: { low: 0.02, good: 0.04, great: 0.07 } },
       what: 'La métrica más honesta de calidad: de quienes te vieron, cuántos hicieron algo. Es la que usamos por defecto.',
       trap: 'Las agencias suelen reportar la tasa sobre seguidores porque da números más altos en cuentas pequeñas. Siempre di sobre qué base calculas.' },
     { key: 'erFollowers', group: 'Interacción', label: 'Tasa de interacción (seguidores)', unit: 'pct', better: 'up', goal: 'rate',
-      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin'],
+      platforms: ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'],
       compute: t => {
         const e = t.sum.engagements || sumOf(t, ['likes', 'comments', 'shares', 'saves']);
         const perPost = t.sum.posts ? e / t.sum.posts : null;
@@ -165,14 +166,14 @@
 
     // ── Perfil y tráfico ─────────────────────────────────────
     { key: 'profileVisitRate', group: 'Perfil y tráfico', label: 'Tasa de visita al perfil', unit: 'pct', better: 'up', goal: 'rate', decimals: 2,
-      platforms: ['instagram', 'tiktok', 'facebook', 'linkedin'],
+      platforms: ['instagram', 'tiktok', 'facebook', 'linkedin', 'x'],
       compute: t => div(t.sum.profileVisits, t.sum.reach || t.sum.views),
       formula: 'Visitas al perfil ÷ alcance',
       bench: { low: 0.005, good: 0.015, great: 0.03 },
       what: 'Curiosidad que despierta el contenido: quién quiso saber más de la marca.',
       trap: 'Si es alta pero los seguidores nuevos no suben, el perfil (bio, destacadas, fijados) no está cerrando la venta.' },
     { key: 'profileToFollow', group: 'Perfil y tráfico', label: 'Conversión perfil → seguidor', unit: 'pct', better: 'up', goal: 'rate',
-      platforms: ['instagram', 'tiktok', 'facebook', 'linkedin'],
+      platforms: ['instagram', 'tiktok', 'facebook', 'linkedin', 'x'],
       compute: t => {
         const net = t.sum.newFollowers || (t.last.followers != null && t.firstBase.followers != null ? t.last.followers - t.firstBase.followers : null);
         return net != null ? div(net, t.sum.profileVisits) : null;
@@ -182,7 +183,7 @@
       what: 'Qué tan bien convierte tu perfil. Es la "landing page" de redes sociales.',
       trap: 'Se mejora con: bio con propuesta de valor clara, destacadas ordenadas como embudo y 3 posts fijados que expliquen quién eres.' },
     { key: 'bioCtr', group: 'Perfil y tráfico', label: 'CTR del enlace en bio', unit: 'pct', better: 'up', goal: 'rate', decimals: 2,
-      platforms: ['instagram', 'tiktok', 'facebook', 'linkedin'],
+      platforms: ['instagram', 'tiktok', 'facebook', 'linkedin', 'x'],
       compute: t => div(t.sum.websiteClicks, t.sum.profileVisits),
       formula: 'Clics al sitio ÷ visitas al perfil',
       bench: { low: 0.02, good: 0.05, great: 0.1 },

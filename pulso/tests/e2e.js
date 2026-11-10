@@ -157,6 +157,17 @@ const assert = require('node:assert/strict');
   assert.ok(await page.locator('.pop-menu [data-mact=role]').count() > 0, 'menú también en la barra lateral');
   await page.keyboard.press('Escape');
 
+  // Registro rápido para cuentas sin API (X, LinkedIn)
+  const xId = await page.evaluate(() => PulsoApp.S.addAccount({ platform: 'x', name: '@marca · X', handle: '@marca', meta: {} }).id);
+  await page.evaluate(() => { PulsoApp.ui.client = 'todos'; PulsoApp.ui.person = 'Todos'; PulsoApp.go('resumen'); });
+  await page.click(`#nav [data-account="${xId}"] .kebab`, { force: true });
+  await page.click('.pop-menu [data-mact=log]');
+  await page.fill('#ql-form [name=followers]', '1520');
+  await page.fill('#ql-form [name=impressions]', '9800');
+  await page.click('[data-save]');
+  await page.waitForTimeout(150);
+  assert.deepEqual(await page.evaluate(id => { const r = PulsoApp.S.rows(id)[0]; return [r.followers, r.impressions]; }, xId), [1520, 9800]);
+
   // Planificador
   await page.click('[data-nav=estratega]');
   await page.click('[data-act=plan]');

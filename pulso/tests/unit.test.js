@@ -416,3 +416,17 @@ test('rango de fechas: compara contra el período anterior de igual duración y 
   const d = A.diagnose({ id: 'i', name: 'IG', platform: 'instagram' }, rows, posts.concat(many), 31, '2026-10-31');
   assert.ok(!d.some(x => /mejor formato/.test(x.title)), 'los posts fuera del rango no cuentan');
 });
+
+test('exportación de analíticas de X: respuestas, reposts y guardados', () => {
+  const csv = 'Date,Impressions,Likes,Engagements,Bookmarks,Shares,New follows,Unfollows,Replies,Reposts,Profile visits\n"Sat, Nov 01, 2026",5400,120,310,8,3,14,2,22,9,41\n';
+  const r = C.importCSV(csv);
+  assert.equal(r.kind, 'daily');
+  const row = r.rows[0];
+  assert.equal(row.date, '2026-11-01');
+  assert.equal(row.impressions, 5400);
+  assert.equal(row.comments, 22);
+  assert.equal(row.saves, 8);
+  assert.equal(row.newFollowers, 14);
+  assert.equal(row.profileVisits, 41);
+  assert.ok(row.shares === 3 || row.shares === 9, 'compartidos (shares o reposts)');
+});

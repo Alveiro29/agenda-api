@@ -110,6 +110,14 @@ Al agregar la cuenta elige **¿Cómo la medimos? → Sin iniciar sesión (datos 
   4. **Generar nuevo token** → app Pulso → Vencimiento **Nunca** → marca los mismos permisos → Generar.
   5. Pega ese token en Pulso. No vuelve a vencer.
 
+## LinkedIn y X sin API (gratis)
+
+- Las APIs de LinkedIn (requiere aprobación) y de X (de pago) no se usan.
+- **Exportaciones:** LinkedIn (perfil y página de empresa) y X (analíticas con Premium) exportan CSV, y Pulso
+  los importa en *Datos e importación*. Reconoce respuestas, reposts, guardados y visitas al perfil.
+- **Registro rápido:** ⋯ → *Anotar números*. Basta con los seguidores una vez por semana; las impresiones
+  y las interacciones son opcionales. Si pasan 7 días sin números, Pulso te lo recuerda al abrirse.
+
 ## Privacidad
 
 - Los tokens de Meta y la API key de Claude se guardan en el **Llavero de cada Mac**, nunca en el archivo

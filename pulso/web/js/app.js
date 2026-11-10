@@ -143,7 +143,9 @@
     });
   }
   const adsRows = () => { const a = S.state.accounts.find(x => x.platform === 'meta_ads'); return a ? S.rows(a.id) : []; };
-  const isSocial = p => ['instagram', 'facebook', 'tiktok', 'linkedin'].includes(p);
+  const isSocial = p => ['instagram', 'facebook', 'tiktok', 'linkedin', 'x'].includes(p);
+  /* Cuentas sin conexión automática: se cargan con exportaciones o el registro rápido */
+  const isManual = a => a.role !== 'competidor' && a.source !== 'public' && !canMeasure(a) && ['linkedin', 'x', 'facebook', 'instagram', 'tiktok'].includes(a.platform);
   // ── Conexiones de Meta: una por app (p. ej. la de la Dra y la de Ademi) ──
   /* Cada conexión tiene su ID de app, clave secreta y token (en el Llavero
      de esta Mac). La conexión "default" usa las claves de antes, así lo que
@@ -477,6 +479,30 @@
       <p>${ui.view !== 'cuenta' ? `<b>${esc(d.account)}:</b> ` : ''}${esc(d.detail)}</p><ul>${d.actions.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
   }
 
+  // ── Registro rápido (para cuentas sin conexión automática) ──
+  function quickLogModal(a) {
+    const fields = (MANUAL_FIELDS[a.platform] || []).filter(f => !['saves', 'fullViews', 'watchTimeSec'].includes(f) || a.platform === 'tiktok');
+    const label = f => (f === 'position' ? 'Posición promedio' : (M.FIELDS[f] || {}).label || f);
+    const last = [...S.rows(a.id)].reverse().find(r => r.followers != null);
+    modal({
+      title: `Anotar números · ${a.name}`,
+      body: `<p class="muted small">Copia los números que ves en ${esc(plat(a.platform).label)} (estadísticas o perfil). Basta con <b>seguidores</b> una vez por semana; lo demás es opcional. Para impresiones e interacciones pon el total de la semana o del día.</p>
+        <div class="form-grid" id="ql-form"><label class="field">Fecha<input type="date" name="date" value="${today()}" max="${today()}"></label>
+        ${fields.map(f => `<label class="field">${esc(label(f))}${f === 'followers' && last ? `<span class="hint">antes: ${M.compact(last.followers)}</span>` : ''}<input type="number" step="any" min="0" name="${f}"></label>`).join('')}</div>`,
+      footer: `<button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Guardar</button>`,
+      onMount(el, close) {
+        $('[data-save]', el).addEventListener('click', () => {
+          const row = {};
+          for (const i of $$('#ql-form input', el)) { if (i.name === 'date') row.date = i.value; else if (i.value !== '') row[i.name] = parseFloat(i.value); }
+          if (!row.date || Object.keys(row).length < 2) { toast('Pon la fecha y al menos un número.', true); return; }
+          S.upsertRows(a.id, C.adaptRows([row], a.platform));
+          close(); toast('Números guardados.'); render();
+        });
+        const f = $('[name=followers]', el); if (f) f.focus();
+      },
+    });
+  }
+
   // ── Menú ⋯ de cada cuenta (en cualquier parte de la app) ───
   let menuEl = null;
   function closeMenu() { if (menuEl) { menuEl.remove(); menuEl = null; } }
@@ -492,6 +518,7 @@
     menuEl.innerHTML = `<div class="pm-title">${esc(a.name)}</div>
       ${item('open', comp ? 'Abrir ficha' : 'Abrir')}
       ${canMeasure(a) ? item('sync', a.source === 'public' ? '↻ Medir ahora' : '↻ Sincronizar ahora') : ''}
+      ${item('log', 'Anotar números…')}
       ${item('edit', 'Editar configuración')}
       ${S.state.clients.length ? `<div class="pm-sep"></div><div class="pm-label">Mover a cliente</div>${S.state.clients.map(c => item('client', `${c.id === a.clientId ? '✓ ' : ''}${esc(c.name)}`, `data-client="${c.id}"`)).join('')}${a.clientId ? item('client', 'Sin cliente', 'data-client=""') : ''}` : ''}
       <div class="pm-sep"></div>
@@ -509,6 +536,7 @@
       if (act === 'open') openAccount(id);
       else if (act === 'sync') syncAccount(a);
       else if (act === 'edit') go('cuenta', { accountId: id, tab: 'datos' });
+      else if (act === 'log') quickLogModal(a);
       else if (act === 'client') { S.updateAccount(id, { clientId: b.dataset.client || undefined }); toast(b.dataset.client ? `Movida a ${clientName(b.dataset.client)}.` : 'Ahora está sin cliente.'); render(); }
       else if (act === 'role') {
         S.updateAccount(id, comp ? { role: 'propia' } : { role: 'competidor', source: a.source || 'public' });
@@ -980,6 +1008,7 @@
     facebook: ['followers', 'reach', 'impressions', 'engagements', 'profileVisits', 'websiteClicks', 'posts'],
     tiktok: ['followers', 'views', 'reach', 'profileVisits', 'likes', 'comments', 'shares', 'saves', 'fullViews', 'watchTimeSec', 'posts'],
     linkedin: ['followers', 'impressions', 'reach', 'engagements', 'likes', 'comments', 'shares', 'profileVisits', 'posts'],
+    x: ['followers', 'impressions', 'engagements', 'likes', 'comments', 'shares', 'saves', 'profileVisits', 'posts'],
     meta_ads: ['spend', 'impressions', 'reach', 'linkClicks', 'clicks', 'leads', 'conversions'],
     web: ['searchClicks', 'searchImpressions', 'position', 'sessions', 'leads'],
   };
@@ -987,7 +1016,8 @@
     instagram: 'Meta Business Suite → Estadísticas → Exportar datos (CSV), o conecta la cuenta en Ajustes → Meta para traerlo automático.',
     facebook: 'Meta Business Suite → Estadísticas → Exportar datos (CSV), o conecta la Página en Ajustes → Meta.',
     tiktok: 'TikTok Studio (web) → Analíticas → Resumen → elige 60 días → Descargar datos. Si baja en XLSX, ábrelo y guárdalo como CSV. Repite en la pestaña Seguidores para el total de seguidores.',
-    linkedin: 'Tu perfil → Analíticas → Impresiones de publicaciones → Exportar. Abre el Excel y guarda la hoja de interacción diaria como CSV.',
+    linkedin: 'Perfil personal: Yo → Ver perfil → Analíticas → Impresiones de publicaciones → Exportar. Página de empresa: Página → Analíticas → Contenido (o Seguidores) → Exportar. Abre el Excel y guarda la hoja diaria como CSV. Pulso suma ambas exportaciones.',
+    x: 'X (necesita X Premium): x.com → Más → Premium → Analíticas → elige el período → Exportar datos. Sin Premium, usa el registro rápido: toma 10 segundos anotar seguidores e impresiones una vez por semana.',
     meta_ads: 'Administrador de anuncios → Informes → desglose por Día → Exportar CSV. O conecta la cuenta publicitaria en Ajustes → Meta.',
     web: 'Search Console → Rendimiento → Exportar → CSV: la pestaña "Fechas" carga aquí las métricas diarias; la de "Consultas" va en SEO → Search Console. Para sesiones y leads, exporta desde Analytics con columna Fecha.',
   };
@@ -997,6 +1027,9 @@
     const cols = fields.filter(f => last.some(r => r[f === 'position' ? 'positionSum' : f] != null));
     const label = f => (f === 'position' ? 'Posición promedio' : (M.FIELDS[f] || {}).label || f);
     const linked = a.source !== 'public' && a.meta && (a.meta.igId || a.meta.pageId || a.meta.adAccountId);
+    const manualCard = ['linkedin', 'x'].includes(a.platform) && a.role !== 'competidor' ? `<div class="card section"><div class="row"><div style="flex:1;min-width:260px"><h2>Sin conexión automática (gratis)</h2>
+      <p class="muted small">${a.platform === 'x' ? 'La API de X es de pago' : 'La API de LinkedIn exige aprobación'}, así que esta cuenta se alimenta con su <b>exportación CSV</b> (abajo) o con el <b>registro rápido</b>: una vez por semana anota los seguidores y, si quieres, impresiones e interacciones. Pulso te recuerda si pasan 7 días sin números.</p></div>
+      <button class="btn primary" data-act="quick-log" data-id="${a.id}">Anotar números</button></div></div>` : '';
     const ttCard = a.platform === 'tiktok' && a.role !== 'competidor' ? `<div class="card section"><div class="row"><div style="flex:1;min-width:260px"><h2>TikTok (API oficial)</h2>
       <p class="muted small">${a.meta && a.meta.tiktokOpenId ? 'Conectada: se sincroniza sola (seguidores, me gusta, videos y, por video, vistas, me gusta, comentarios y compartidos). El acceso se renueva solo durante un año.' : 'Conéctala para traer seguidores y las métricas de cada video automáticamente. Requiere configurar TikTok en Ajustes una sola vez.'}</p></div>
       ${a.meta && a.meta.tiktokOpenId ? `<button class="btn" data-act="tt-connect" data-id="${a.id}">Volver a conectar</button>` : `<button class="btn primary" data-act="tt-connect" data-id="${a.id}">Conectar con TikTok</button>`}</div></div>` : '';
@@ -1005,7 +1038,7 @@
       Alcance, impresiones, guardados y visitas no son públicos.${a.lastPublic ? `<br>Última medición: ${new Date(a.lastPublic.at).toLocaleString('es-DO')} · vía ${esc(a.lastPublic.via)}` : ''}</p>
       ${a.role !== 'competidor' ? `<p class="small callout">¿Quieres los datos completos de esta cuenta sin tener la sesión en tu Mac? En la computadora donde está abierta (la de Windows), exporta <b>${a.platform === 'tiktok' ? 'TikTok Studio → Analíticas → Descargar datos' : 'Meta Business Suite → Estadísticas → Exportar datos'}</b>, mándate el CSV y súbelo aquí abajo en "Importar CSV". Se combina con la medición pública.</p>` : ''}</div>
       <button class="btn primary" data-act="sync" data-id="${a.id}">↻ Medir ahora</button></div></div>` : '';
-    return ttCard + pubCard + `<div class="grid two section">
+    return manualCard + ttCard + pubCard + `<div class="grid two section">
       <div class="card"><h2>Importar CSV</h2><p class="muted small">${esc(EXPORT_HELP[a.platform] || '')}</p>
         <div class="row"><input type="file" id="csv-file" accept=".csv,.txt,text/csv" multiple></div>
         <details style="margin-top:8px"><summary class="small">…o pega el contenido</summary><textarea id="csv-text" placeholder="Fecha,Seguidores,Alcance,…"></textarea></details>
@@ -1464,7 +1497,7 @@
   }
 
   const SAFARI_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
-  const userOf = handle => String(handle || '').trim().replace(/^https?:\/\/(www\.)?(instagram|tiktok)\.com\//i, '').replace(/^@/, '').split(/[/?#]/)[0];
+  const userOf = handle => String(handle || '').trim().replace(/^https?:\/\/(www\.)?(instagram|tiktok|x|twitter)\.com\//i, '').replace(/^@/, '').split(/[/?#]/)[0];
 
   /* Mide una cuenta desde afuera. Instagram: primero la vía oficial
      (Business Discovery con tu "cuenta lupa"); si no está configurada,
@@ -1609,7 +1642,7 @@
             return;
           }
           $('#acc-hint', el).textContent = ['instagram', 'facebook', 'meta_ads'].includes(p) ? 'Tip: en Ajustes → Meta puedes agregar estas cuentas ya conectadas para sincronizarlas solas.'
-            : p === 'linkedin' ? 'LinkedIn personal: carga los datos con el export de Analíticas o el registro manual.' : p === 'tiktok' ? 'TikTok: importa el CSV de TikTok Studio desde la pestaña Datos.' : 'Sitio web: pon la URL completa para usarla en el auditor SEO.';
+            : p === 'x' ? 'X: sin API (es de pago). Carga sus números con la exportación de analíticas o el registro rápido semanal (⋯ → Anotar números).' : p === 'linkedin' ? 'LinkedIn: sin API (requiere aprobación). Carga tu perfil o página con su exportación CSV o el registro rápido semanal (⋯ → Anotar números).' : p === 'tiktok' ? 'TikTok: importa el CSV de TikTok Studio desde la pestaña Datos.' : 'Sitio web: pon la URL completa para usarla en el auditor SEO.';
         };
         $('[name=platform]', el).addEventListener('change', hint); $('[name=source]', el).addEventListener('change', hint); hint();
         $('[data-save]', el).addEventListener('click', () => {
@@ -1786,6 +1819,7 @@
       toast('TikTok guardado. Ahora abre tu cuenta de TikTok → Datos e importación → Conectar con TikTok.');
     },
     'tt-connect': b => tiktokConnectModal(S.account(b.dataset.id)),
+    'quick-log': b => quickLogModal(S.account(b.dataset.id)),
     'save-ai': async () => { await P.setSecret('anthropic_key', $('#ai-key').value.trim()); S.setSetting('aiModel', $('#ai-model').value.trim() || AI.DEFAULT_MODEL); toast('Guardado.'); },
     'export': async () => { const r = await P.saveFile(`pulso-respaldo-${today()}.json`, JSON.stringify(S.state, null, 1)); if (r && r.ok) toast('Respaldo exportado.'); },
     'import-backup': async () => {
@@ -1852,6 +1886,9 @@
       const exp = +(await P.getPref(connKeys(c.id).exp) || 0);
       if (exp && exp - Date.now() < 7 * 86400000) setTimeout(() => toast(exp < Date.now() ? `El token de Meta "${c.name}" venció: sus anuncios no se sincronizan (Instagram y Facebook siguen con tokens de página).` : `El token de Meta "${c.name}" vence el ${new Date(exp).toLocaleDateString('es-DO')}. Pega uno nuevo en Ajustes (se alarga solo).`), 1200);
     }
+    // Recordatorio: cuentas manuales (LinkedIn, X…) con más de 7 días sin números
+    const stale = S.state.accounts.filter(a => !a.demo && isManual(a) && S.rows(a.id).length && A.diffDays(A.latestDate(S.rows(a.id)), today()) > 7);
+    if (stale.length) setTimeout(() => toast(`Toca anotar números de ${stale.slice(0, 3).map(a => a.name).join(', ')}${stale.length > 3 ? '…' : ''} (⋯ → Anotar números).`), 2000);
     if (S.lastDeduped) setTimeout(() => toast(`Se unieron ${S.lastDeduped} cuenta(s) duplicada(s) sin perder datos.`), 600);
     const savedClient = await P.getPref('client');
     if (savedClient) ui.client = savedClient;
