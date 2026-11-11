@@ -592,7 +592,9 @@ function citasDraDelDia(ag, date) {
 
    El paso de los pares consecutivos revalida TODA la secuencia, no solo lo
    que toca al candidato: de ahí sale que la regla funcione en los dos
-   sentidos sin importar en qué orden entraron las reservas. */
+   sentidos sin importar en qué orden entraron las reservas. Pero solo
+   cuenta lo que el candidato rompe: un incumplimiento que ya estaba en la
+   agenda (porque la Dra. lo agendó a mano) no cierra el resto del día. */
 function conflictoDra(suyas, draOcupa, a, b, suc) {
   if ((draOcupa || []).some(([s, e]) => a < e && b > s)) return 'ocupada';
 
@@ -605,18 +607,35 @@ function conflictoDra(suyas, draOcupa, a, b, suc) {
   /* Las citas seguidas de una misma sede se funden en un bloque. El
      traslado se mide desde que termina la ÚLTIMA del bloque — no la última
      que empezó: con dos a la vez, una larga puede terminar después. */
-  const seq = suyas.concat([{ ini: a, fin: b, suc }]).sort((x, y) => x.ini - y.ini);
-  const bloques = [];
-  for (const t of seq) {
-    const ult = bloques[bloques.length - 1];
-    if (ult && ult.suc === t.suc) ult.fin = Math.max(ult.fin, t.fin);
-    else bloques.push({ ini: t.ini, fin: t.fin, suc: t.suc });
-  }
-  if (bloques.length - 1 > MAX_CAMBIOS_SEDE) return 'segundo_traslado';
+  const bloquesDe = lista => {
+    const out = [];
+    for (const t of lista.slice().sort((x, y) => x.ini - y.ini)) {
+      const ult = out[out.length - 1];
+      if (ult && ult.suc === t.suc) ult.fin = Math.max(ult.fin, t.fin);
+      else out.push({ ini: t.ini, fin: t.fin, suc: t.suc });
+    }
+    return out;
+  };
+  const cortos = bl => {
+    const out = new Set();
+    for (let i = 0; i < bl.length - 1; i++) {
+      if ((bl[i + 1].ini - bl[i].fin) < TRASLADO_MIN * 60000) out.add(bl[i].fin + '>' + bl[i + 1].ini);
+    }
+    return out;
+  };
 
-  for (let i = 0; i < bloques.length - 1; i++) {
-    if ((bloques[i + 1].ini - bloques[i].fin) < TRASLADO_MIN * 60000) return 'traslado';
-  }
+  /* Se compara el día CON el candidato contra el día SIN él, y solo se
+     rechaza lo que el candidato rompe o empeora. Si la Dra. agendó a mano
+     algo que ya incumple una regla (un traslado de 90 min, por ejemplo),
+     ese incumplimiento es decisión suya: no puede cerrar el día entero
+     para todo lo demás. Una cita que se suma a una sede donde ella ya va
+     a estar, sin acortar ningún traslado, entra. */
+  const antes = bloquesDe(suyas);
+  const despues = bloquesDe(suyas.concat([{ ini: a, fin: b, suc }]));
+  if (despues.length - 1 > MAX_CAMBIOS_SEDE && despues.length > antes.length) return 'segundo_traslado';
+
+  const yaCortos = cortos(antes);
+  for (const k of cortos(despues)) if (!yaCortos.has(k)) return 'traslado';
   return null;
 }
 
