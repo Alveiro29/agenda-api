@@ -122,8 +122,25 @@ kbd { display: none; }
 @media (max-width: 420px) { .goal-row { grid-template-columns: 1fr; } .goal { flex-direction: row; align-items: baseline; gap: 10px; } .goal small { margin-left: auto; } }
 
 /* inicio */
+.profiles { padding-top: 24px; gap: 22px; }
+.prof-list { display: flex; flex-direction: column; gap: 10px; }
+.prof { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 12px 14px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); color: var(--ink); font: inherit; cursor: pointer; box-shadow: 0 3px 0 var(--rule); }
+.prof:hover, .prof:focus-visible { border-color: var(--acc); outline: none; }
+.prof:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--rule); }
+.prof.add { border-style: dashed; box-shadow: none; background: transparent; }
+.prof-txt { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.prof-txt b { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prof-txt small { color: var(--ink-soft); font-size: 14px; }
+.prof .chev { transform: scaleX(-1); color: var(--ink-soft); width: 20px; height: 20px; }
+.avatar { flex: none; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--av, var(--ink)); color: #fff; font-family: var(--f-hand); font-size: 24px; transform: rotate(-4deg); }
+.avatar.sm { width: 32px; height: 32px; border-radius: 10px; font-size: 17px; }
+.avatar.plus { background: transparent; color: var(--ink-soft); border: 2px dashed var(--rule); font-family: var(--f-display); transform: none; }
+.who { background: none; border: 0; padding: 0; cursor: pointer; border-radius: 10px; }
+.who:focus-visible { outline: 3px solid var(--acc); outline-offset: 2px; }
+.err { color: var(--red); font-weight: 400; }
+.settings .row-wrap input { font: inherit; padding: 10px 12px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); color: var(--ink); flex: 1; min-width: 0; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.stats { display: flex; gap: 14px; }
+.stats { display: flex; align-items: center; gap: 14px; }
 .stat { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat.flame { color: #e8590c; }
 .stat.xp { color: var(--gold); }
@@ -602,12 +619,55 @@ const icon = (n, cls = "ic") => h("span", { class: cls, html: ICON[n] });
 /* ---------- estado ---------- */
 const KEY = "cahier.v1";
 const blankPanel = () => ({ placed: false, lvl: 0, start: 1, initial: null, plan: [], done: {}, srs: {}, session: 0, final: null, best: 0 });
-function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.panels && s.panels.fr && s.panels.es) return s; } catch (e) { /* sin almacenamiento */ }
-  return { name: "", goal: 60, sound: true, streak: 0, last: null, xp: 0, xpDay: {}, panels: { fr: blankPanel(), es: blankPanel() } };
+const blankState = () => ({ name: "", goal: 60, sound: true, streak: 0, last: null, xp: 0, xpDay: {}, panels: { fr: blankPanel(), es: blankPanel() } });
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* sin almacenamiento */ } };
+const lsDel = (k) => { try { localStorage.removeItem(k); } catch (e) { /* nada */ } };
+
+/* Perfiles: varias personas en la misma máquina, cada una con su progreso en su propia clave. */
+const PROF_KEY = "cahier.perfiles";
+const COLORES = ["#0a7a66", "#2338b4", "#b4235e", "#c46a00", "#6a3bb4", "#1f7fa8", "#7a8a0a", "#a83a1f"];
+const stateKey = (id) => KEY + ":" + id;
+function loadProfiles() {
+  try { const p = JSON.parse(lsGet(PROF_KEY)); if (p && Array.isArray(p.list)) return p; } catch (e) { /* nada */ }
+  const prof = { list: [], last: null };
+  // migración: el progreso de antes de los perfiles pasa a un primer perfil
+  try {
+    const old = JSON.parse(lsGet(KEY));
+    if (old && old.panels && old.name) {
+      prof.list.push({ id: "p1", name: old.name, color: COLORES[0] }); prof.last = "p1";
+      lsSet(stateKey("p1"), JSON.stringify(old)); lsSet(PROF_KEY, JSON.stringify(prof)); lsDel(KEY);
+    }
+  } catch (e) { /* nada */ }
+  return prof;
 }
-let S = load();
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } }
+let PROF = loadProfiles();
+const saveProfiles = () => lsSet(PROF_KEY, JSON.stringify(PROF));
+function load(id) {
+  try { const s = JSON.parse(lsGet(stateKey(id))); if (s && s.panels && s.panels.fr && s.panels.es) return s; } catch (e) { /* sin almacenamiento */ }
+  return blankState();
+}
+let CUR = null;
+let S = blankState();
+function save() {
+  if (!CUR) return;
+  lsSet(stateKey(CUR), JSON.stringify(S));
+  const p = PROF.list.find((x) => x.id === CUR);
+  if (p && p.name !== S.name && S.name) { p.name = S.name; saveProfiles(); }
+}
+function usar(id) { CUR = id; S = load(id); PROF.last = id; saveProfiles(); }
+function nuevoPerfil(name, goal) {
+  let n = PROF.list.length + 1; while (PROF.list.some((p) => p.id === "p" + n)) n++;
+  const id = "p" + n, used = PROF.list.map((p) => p.color);
+  PROF.list.push({ id, name, color: COLORES.find((c) => !used.includes(c)) || COLORES[PROF.list.length % COLORES.length] });
+  CUR = id; S = blankState(); S.name = name; S.goal = goal; PROF.last = id; saveProfiles(); save();
+}
+function borrarPerfil(id) {
+  lsDel(stateKey(id)); PROF.list = PROF.list.filter((p) => p.id !== id);
+  if (PROF.last === id) PROF.last = null; saveProfiles(); CUR = null; S = blankState();
+}
+const avatar = (p, cls) => h("span", { class: "avatar " + (cls || ""), style: "--av:" + p.color, "aria-hidden": "true" }, (p.name || "?").trim().charAt(0).toUpperCase());
+const perfilActual = () => PROF.list.find((p) => p.id === CUR);
 
 const P = {
   fr: { key: "fr", name: "Francés", sub: "De cero a conversar en 30 días", units: FR, place: PLACE_FR,
@@ -898,21 +958,44 @@ function toast(msg) {
 
 /* ---------- bienvenida ---------- */
 function Welcome() {
-  let goal = S.goal || 60;
+  let goal = 60;
   const goals = [[30, "Relajado", "unos 10 min al día"], [60, "Constante", "unos 20 min al día"], [90, "Intenso", "unos 30 min al día"]];
   const chips = h("div", { class: "goal-row", role: "radiogroup", "aria-label": "Meta diaria" },
     goals.map(([xp, n, d]) => h("button", { class: "goal" + (xp === goal ? " on" : ""), role: "radio", "aria-checked": xp === goal ? "true" : "false", onclick: (e) => { goal = xp; chips.querySelectorAll(".goal").forEach((b) => { b.classList.remove("on"); b.setAttribute("aria-checked", "false"); }); e.currentTarget.classList.add("on"); e.currentTarget.setAttribute("aria-checked", "true"); } },
       h("b", null, n), h("span", null, d), h("small", null, xp + " XP"))));
-  const name = h("input", { id: "name", type: "text", placeholder: "Tu nombre", value: S.name || "", autocomplete: "given-name", maxlength: "24", "data-autofocus": true });
-  const go = () => { S.name = name.value.trim() || "Estudiante"; S.goal = goal; save(); Home(); };
+  const name = h("input", { id: "name", type: "text", placeholder: "Tu nombre", value: "", autocomplete: "off", maxlength: "24", "data-autofocus": true });
+  const err = h("p", { class: "small err", hidden: true });
+  const go = () => {
+    const n = name.value.trim();
+    if (!n) { err.textContent = "Escribe tu nombre para crear tu perfil."; err.hidden = false; name.focus(); return; }
+    if (PROF.list.some((p) => p.name.toLowerCase() === n.toLowerCase())) { err.textContent = "Ya hay un perfil llamado " + n + ". Usa otro nombre o vuelve y elígelo."; err.hidden = false; name.focus(); return; }
+    nuevoPerfil(n, goal); Home();
+  };
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  const otros = PROF.list.length > 0;
   screen(h("main", { class: "welcome" },
-    h("div", { class: "brand" }, h("span", { class: "brand-mark" }, "C"), h("span", null, "Cahier")),
-    h("h1", { class: "display" }, "Dos cuadernos, un mes, avance de verdad."),
+    otros ? h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Volver", onclick: Perfiles }, icon("back")), h("h1", null, "Nueva persona"))
+          : h("div", { class: "brand" }, h("span", { class: "brand-mark" }, "C"), h("span", null, "Cahier")),
+    h("h1", { class: "display" }, otros ? "Tu propio cuaderno, con tu propio plan." : "Dos cuadernos, un mes, avance de verdad."),
     h("p", { class: "lead" }, "Un cuaderno de ", h("b", { class: "t-es" }, "ortografía en español"), " y otro de ", h("b", { class: "t-fr" }, "francés"), ". Cada uno empieza con una prueba corta, te arma un plan de 30 días a tu nivel y repite justo lo que fallas hasta que se te queda."),
-    h("label", { class: "field", for: "name" }, h("span", null, "¿Cómo te llamas?"), name),
+    h("label", { class: "field", for: "name" }, h("span", null, "¿Cómo te llamas?"), name, err),
     h("div", { class: "field" }, h("span", null, "Meta diaria"), chips),
     h("button", { class: "btn primary big", onclick: go }, "Abrir mis cuadernos")
+  ), "paper");
+}
+
+/* ---------- ¿quién estudia? ---------- */
+function Perfiles() {
+  if (!PROF.list.length) return Welcome();
+  const resumen = (p) => { const s = load(p.id); const d = ["es", "fr"].map((k) => Object.keys(s.panels[k].done).length).reduce((a, b) => a + b, 0); return s.xp + " XP · " + d + (d === 1 ? " día hecho" : " días hechos"); };
+  screen(h("main", { class: "profiles" },
+    h("div", { class: "brand" }, h("span", { class: "brand-mark" }, "C"), h("span", null, "Cahier")),
+    h("h1", { class: "display" }, "¿Quién estudia hoy?"),
+    h("div", { class: "prof-list" },
+      PROF.list.map((p, i) => h("button", { class: "prof", "data-autofocus": (p.id === PROF.last || (!PROF.last && i === 0)) ? true : null, onclick: () => { usar(p.id); Home(); } },
+        avatar(p), h("span", { class: "prof-txt" }, h("b", null, p.name), h("small", null, resumen(p))), icon("back", "ic chev"))),
+      h("button", { class: "prof add", onclick: Welcome }, h("span", { class: "avatar plus", "aria-hidden": "true" }, "+"), h("span", { class: "prof-txt" }, h("b", null, "Agregar persona"), h("small", null, "Cada quien con su prueba, su plan y su racha")))),
+    h("p", { class: "muted small" }, "Los perfiles se guardan en esta computadora. Cualquiera que la use puede abrirlos.")
   ), "paper");
 }
 
@@ -939,12 +1022,13 @@ function PanelCard(pk) {
     body);
 }
 function Home() {
-  if (!S.name) return Welcome();
+  if (!CUR) return Perfiles();
   const goal = S.goal || 60;
   screen(h("main", { class: "home" },
     h("header", { class: "topbar" },
       h("div", { class: "brand" }, h("span", { class: "brand-mark" }, "C"), h("span", null, "Cahier")),
       h("div", { class: "stats" },
+        h("button", { class: "who", title: "Cambiar de persona", "aria-label": "Cambiar de persona (ahora: " + S.name + ")", onclick: Perfiles }, avatar(perfilActual() || { name: S.name, color: COLORES[0] }, "sm")),
         h("span", { class: "stat flame", title: "Racha" }, icon("flame"), h("b", null, streakNow()), h("span", { class: "sr" }, " días de racha")),
         h("span", { class: "stat xp", title: "XP total" }, icon("bolt"), h("b", null, S.xp)))),
     h("section", { class: "hello" },
@@ -955,6 +1039,7 @@ function Home() {
     h("footer", { class: "foot" },
       h("button", { class: "link", onclick: () => { S.sound = !S.sound; save(); Home(); } }, S.sound ? "Sonidos: activados" : "Sonidos: desactivados"),
       h("button", { class: "link", onclick: Settings }, "Ajustes y progreso"),
+      h("button", { class: "link", onclick: PROF.list.length > 1 ? Perfiles : Welcome }, PROF.list.length > 1 ? "Cambiar de persona" : "Agregar otra persona"),
       !TTS ? h("p", { class: "muted small" }, "Este navegador no tiene voz sintética: los ejercicios de escuchar y dictado se reemplazan por otros.") : null)
   ), "paper");
 }
@@ -967,13 +1052,21 @@ function Settings() {
   };
   screen(h("main", { class: "settings" },
     h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Volver", onclick: Home }, icon("back")), h("h1", null, "Ajustes")),
+    (() => {
+      const inp = h("input", { type: "text", value: S.name, maxlength: "24", "aria-label": "Nombre" });
+      const guardar = () => { const n = inp.value.trim(); if (!n || n === S.name) return; if (PROF.list.some((p) => p.id !== CUR && p.name.toLowerCase() === n.toLowerCase())) { toast("Ya existe un perfil con ese nombre"); return; } S.name = n; save(); toast("Nombre actualizado"); };
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") guardar(); });
+      return h("section", { class: "card" }, h("h3", null, "Perfil"), h("div", { class: "row-wrap" }, inp, h("button", { class: "btn ghost", onclick: guardar }, "Guardar nombre")));
+    })(),
     h("section", { class: "card" }, h("h3", null, "Meta diaria"),
       h("div", { class: "row-wrap" }, [30, 60, 90].map((g) => h("button", { class: "btn " + (S.goal === g ? "primary" : "ghost"), onclick: () => { S.goal = g; save(); Settings(); } }, g + " XP")))),
     ["es", "fr"].map((pk) => h("section", { class: "card" }, h("h3", null, P[pk].name),
       h("p", { class: "muted" }, S.panels[pk].placed ? "Nivel " + P[pk].levels[S.panels[pk].lvl].n + " · " + Object.keys(S.panels[pk].done).length + " días hechos" : "Sin prueba de nivel todavía."),
       S.panels[pk].placed ? row("Reiniciar este cuaderno", () => { S.panels[pk] = blankPanel(); save(); toast("Cuaderno de " + P[pk].name.toLowerCase() + " reiniciado"); Settings(); }, true) : null)),
-    h("section", { class: "card" }, h("h3", null, "Todo"), row("Borrar todo y empezar de cero", () => { try { localStorage.removeItem(KEY); } catch (e) { /* nada */ } S = load(); Welcome(); }, true)),
-    h("p", { class: "muted small" }, "Tu progreso se guarda solo en este navegador.")
+    h("section", { class: "card" }, h("h3", null, "Borrar perfil"),
+      h("p", { class: "muted" }, "Elimina a " + S.name + " y todo su progreso. Los demás perfiles no se tocan."),
+      row("Borrar el perfil de " + S.name, () => { borrarPerfil(CUR); toast("Perfil borrado"); Perfiles(); }, true)),
+    h("p", { class: "muted small" }, "Cada perfil se guarda solo en esta computadora.")
   ), "paper");
 }
 
@@ -1464,7 +1557,8 @@ function Sprint(pk) {
 function frAllFallback(ok) { return [pickOne(FR.flatMap((u) => u.v.map((x) => x[0])).filter((x) => x !== ok))]; }
 
 /* ---------- arranque ---------- */
-Home();
+if (PROF.list.length === 1) usar(PROF.list[0].id);
+if (CUR) Home(); else Perfiles();
 })();
 
 </script>

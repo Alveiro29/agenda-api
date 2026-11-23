@@ -122,8 +122,25 @@ kbd { display: none; }
 @media (max-width: 420px) { .goal-row { grid-template-columns: 1fr; } .goal { flex-direction: row; align-items: baseline; gap: 10px; } .goal small { margin-left: auto; } }
 
 /* inicio */
+.profiles { padding-top: 24px; gap: 22px; }
+.prof-list { display: flex; flex-direction: column; gap: 10px; }
+.prof { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 12px 14px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); color: var(--ink); font: inherit; cursor: pointer; box-shadow: 0 3px 0 var(--rule); }
+.prof:hover, .prof:focus-visible { border-color: var(--acc); outline: none; }
+.prof:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--rule); }
+.prof.add { border-style: dashed; box-shadow: none; background: transparent; }
+.prof-txt { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.prof-txt b { font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prof-txt small { color: var(--ink-soft); font-size: 14px; }
+.prof .chev { transform: scaleX(-1); color: var(--ink-soft); width: 20px; height: 20px; }
+.avatar { flex: none; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--av, var(--ink)); color: #fff; font-family: var(--f-hand); font-size: 24px; transform: rotate(-4deg); }
+.avatar.sm { width: 32px; height: 32px; border-radius: 10px; font-size: 17px; }
+.avatar.plus { background: transparent; color: var(--ink-soft); border: 2px dashed var(--rule); font-family: var(--f-display); transform: none; }
+.who { background: none; border: 0; padding: 0; cursor: pointer; border-radius: 10px; }
+.who:focus-visible { outline: 3px solid var(--acc); outline-offset: 2px; }
+.err { color: var(--red); font-weight: 400; }
+.settings .row-wrap input { font: inherit; padding: 10px 12px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); color: var(--ink); flex: 1; min-width: 0; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.stats { display: flex; gap: 14px; }
+.stats { display: flex; align-items: center; gap: 14px; }
 .stat { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat.flame { color: #e8590c; }
 .stat.xp { color: var(--gold); }
