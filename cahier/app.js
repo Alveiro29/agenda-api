@@ -170,6 +170,76 @@ const weakCount = (pk) => Object.values(S.panels[pk].srs).filter((v) => v.b === 
 
 /* ---------- generadores de ejercicios ---------- */
 const data = (pk, ref) => unit(pk, ref.u)[ref.k][ref.i];
+
+/* ---------- por qué lleva (o no) tilde: sílabas + regla aplicada a la palabra ---------- */
+const VOC = "aeiouáéíóúü", FUERTE = "aeoáéóíú";
+function silabas(word) {
+  const w = word.toLowerCase(), t = [];
+  for (let i = 0; i < w.length; i++) {
+    const c = w[i], n = w[i + 1], n2 = w[i + 2];
+    if ((c === "c" && n === "h") || (c === "l" && n === "l") || (c === "r" && n === "r")) { t.push({ s: c + n, v: false }); i++; }
+    else if ((c === "q" || c === "g") && n === "u" && n2 && "eiéí".includes(n2)) { t.push({ s: c + n, v: false }); i++; }
+    else t.push({ s: c, v: VOC.includes(c) });
+  }
+  // núcleos: vocales seguidas forman un núcleo salvo dos fuertes juntas (hiato)
+  const nuc = []; let cur = null;
+  t.forEach((x, i) => {
+    if (!x.v) { cur = null; return; }
+    if (cur && !(FUERTE.includes(t[i - 1].s) && FUERTE.includes(x.s))) cur.end = i;
+    else { cur = { start: i, end: i }; nuc.push(cur); }
+  });
+  if (!nuc.length) return [word];
+  const insep = (a, b) => "lr".includes(b) && "pbcgftdk".includes(a) && !(a === "d" && b === "l");
+  const cortes = [];
+  for (let k = 1; k < nuc.length; k++) {
+    const a = nuc[k - 1].end + 1, b = nuc[k].start, n = b - a;
+    let cut;
+    if (n <= 1) cut = a;
+    else if (n === 2) cut = insep(t[a].s, t[a + 1].s) ? a : a + 1;
+    else if (n === 3) cut = insep(t[a + 1].s, t[a + 2].s) ? a + 1 : a + 2;
+    else cut = a + 2;
+    cortes.push(cut);
+  }
+  const out = []; let from = 0;
+  [...cortes, t.length].forEach((c) => { out.push(t.slice(from, c).map((x) => x.s).join("")); from = c; });
+  return out;
+}
+function explicaTilde(word) {
+  const w = word.toLowerCase();
+  if (/\s/.test(w)) return null;
+  const sil = silabas(w), n = sil.length;
+  let ton = sil.findIndex((s) => /[áéíóú]/.test(s));
+  const conTilde = ton >= 0;
+  const fin = w.slice(-1), finVoc = "aeiou".includes(stripTilde(fin)), finNS = fin === "n" || fin === "s";
+  if (!conTilde) ton = n === 1 ? 0 : (finVoc || finNS ? n - 2 : n - 1);
+  const dib = h("span", { class: "silabas" }, sil.map((s, i) => [i ? "·" : null, i === ton ? h("b", null, s.toUpperCase()) : s]));
+  const termina = finVoc ? "vocal (" + stripTilde(fin) + ")" : "«" + fin + "»";
+  const p = (...k) => h("p", null, ...k);
+  let tipo, regla;
+  if (n === 1) {
+    return h("div", { class: "why" }, p(dib, " tiene una sola sílaba", (w.match(/[aeiouáéíóúü]/g) || []).length > 1 ? " (sus vocales se pronuncian juntas, de un golpe)." : "."),
+      p("Las palabras de una sílaba ", h("b", null, "no llevan tilde"), " (salvo las diacríticas: tú, él, sí, más…)."));
+  }
+  const hiato = conTilde && /[íú]/.test(sil[ton]) && ((sil[ton - 1] && /[aeoáéó]$/.test(sil[ton - 1]) && /^h?[íú]/.test(sil[ton])) || (sil[ton + 1] && /^h?[aeo]/.test(sil[ton + 1]) && /[íú]$/.test(sil[ton])));
+  if (hiato) {
+    const v = sil[ton].match(/[íú]/)[0];
+    return h("div", { class: "why" }, p(dib, ": la ", h("b", null, v), " suena fuerte y se separa de la vocal de al lado (hiato)."),
+      p("Cuando la i o la u suenan fuertes junto a a, e, o, ", h("b", null, "llevan tilde siempre"), ", aunque la regla de agudas y llanas diga lo contrario."));
+  }
+  const pos = n - 1 - ton;
+  if (pos === 0) { tipo = "aguda"; regla = finVoc || finNS ? ["Termina en ", termina, ". Las agudas que terminan en n, s o vocal ", h("b", null, "llevan tilde"), "."] : ["Termina en ", termina, ", que no es n, s ni vocal. Por eso ", h("b", null, "no lleva tilde"), "."]; }
+  else if (pos === 1) { tipo = "llana"; regla = finVoc || finNS ? ["Termina en ", termina, ". Las llanas que terminan en n, s o vocal ", h("b", null, "no llevan tilde"), "."] : ["Termina en ", termina, ", que no es n, s ni vocal. Las llanas así ", h("b", null, "llevan tilde"), "."]; }
+  else { tipo = "esdrújula"; regla = ["Las esdrújulas ", h("b", null, "llevan tilde siempre"), ", terminen en lo que terminen."]; }
+  const donde = ["la última", "la penúltima", "la antepenúltima"][Math.min(pos, 2)];
+  return h("div", { class: "why" }, p(dib, ": la fuerza cae en ", donde, " sílaba → es ", h("b", null, tipo), "."), p(...regla));
+}
+const UNIDADES_ACENTO = [7, 11];
+function nota(pk, ref) {
+  const u = unit(pk, ref.u), it = data(pk, ref);
+  if (pk === "es" && it[3]) return it[3];
+  if (pk === "es" && UNIDADES_ACENTO.includes(ref.u)) { try { const e = explicaTilde(it[0]); if (e) return e; } catch (e) { /* cae a la regla */ } }
+  return u.r;
+}
 const refs = (u, k) => u[k].map((_, i) => ({ u: u.id, k, i }));
 
 function frDistract(pk, ref, side, n) {
@@ -194,28 +264,28 @@ const MK = {
   cloze(pk, ref) { const [q, ok, no] = data(pk, ref); return { type: "mc", ref, title: "Completa la frase", sentence: q, opts: shuffle([ok, ...no]), ok, speakOk: q.replace("___", ok), note: unit(pk, ref.u).r }; },
   pairs(pk, rs) { return { type: "pairs", refs: rs, title: "Une cada palabra con su traducción", items: rs.map((r) => data(pk, r)) }; },
   /* Ortografía */
-  ctx(pk, ref) { const [ok, bad, ctx] = data(pk, ref); return { type: "mc", ref, title: "Elige la forma correcta", sentence: ctx, opts: shuffle([ok, ...bad.split("|")]).map((o) => fillWord(ctx, o)), ok: fillWord(ctx, ok), note: unit(pk, ref.u).r, full: fill(ctx, ok) }; },
+  ctx(pk, ref) { const [ok, bad, ctx] = data(pk, ref); return { type: "mc", ref, title: "Elige la forma correcta", sentence: ctx, opts: shuffle([ok, ...bad.split("|")]).map((o) => fillWord(ctx, o)), ok: fillWord(ctx, ok), note: nota(pk, ref), full: fill(ctx, ok) }; },
   letter(pk, ref) {
     const [ok0, bad0, ctx] = data(pk, ref); const ok = fillWord(ctx, ok0), bad = fillWord(ctx, bad0.split("|")[0]);
     let a = 0; while (a < ok.length && a < bad.length && ok[a] === bad[a]) a++;
     let b = 0; while (b < ok.length - a && b < bad.length - a && ok[ok.length - 1 - b] === bad[bad.length - 1 - b]) b++;
     const so = ok.slice(a, ok.length - b), sb = bad.slice(a, bad.length - b);
     if (so.length > 3 || sb.length > 3 || so.includes(" ") || sb.includes(" ") || (a + b) === 0) return null;
-    return { type: "letter", ref, title: "¿Qué falta?", pre: ok.slice(0, a), post: ok.slice(ok.length - b), opts: shuffle([so, sb]), ok: so, word: ok, sentence: ctx, note: unit(pk, ref.u).r, full: fill(ctx, ok0) };
+    return { type: "letter", ref, title: "¿Qué falta?", pre: ok.slice(0, a), post: ok.slice(ok.length - b), opts: shuffle([so, sb]), ok: so, word: ok, sentence: ctx, note: nota(pk, ref), full: fill(ctx, ok0) };
   },
-  hunt(pk, ref) { const [ok, bad, ctx] = data(pk, ref); return { type: "hunt", ref, title: "Caza el error: toca la palabra mal escrita", ctx, okW: fillWord(ctx, ok), badW: fillWord(ctx, bad.split("|")[0]), note: unit(pk, ref.u).r, full: fill(ctx, ok) }; },
+  hunt(pk, ref) { const [ok, bad, ctx] = data(pk, ref); return { type: "hunt", ref, title: "Caza el error: toca la palabra mal escrita", ctx, okW: fillWord(ctx, ok), badW: fillWord(ctx, bad.split("|")[0]), note: nota(pk, ref), full: fill(ctx, ok) }; },
   dictation(pk, ref) {
     if (!TTS) return null;
     const [ok, bad, ctx] = data(pk, ref);
     if (/[¿¡]/.test(ok) || ok.toLowerCase() === bad.toLowerCase()) return null;
-    return { type: "write", ref, title: "Dictado: escribe la palabra que falta", sentence: ctx, audio: fill(ctx, ok), ok: fillWord(ctx, ok), lang: "es", note: unit(pk, ref.u).r, full: fill(ctx, ok) };
+    return { type: "write", ref, title: "Dictado: escribe la palabra que falta", sentence: ctx, audio: fill(ctx, ok), ok: fillWord(ctx, ok), lang: "es", note: nota(pk, ref), full: fill(ctx, ok) };
   },
   tilde(pk, ref) {
     const [ok0, bad0, ctx] = data(pk, ref); const ok = fillWord(ctx, ok0), bad = fillWord(ctx, bad0.split("|")[0]);
     if (ok.includes(" ") || stripTilde(ok) !== stripTilde(bad) || ok === bad) return null;
     const chars = [...ok]; const base = chars.map(stripTilde);
     const target = chars.findIndex((c, i) => c !== base[i]);
-    return { type: "tilde", ref, title: "¿Dónde va la tilde?", base, target, word: ok, sentence: ctx, note: unit(pk, ref.u).r, full: fill(ctx, ok0) };
+    return { type: "tilde", ref, title: "¿Dónde va la tilde?", base, target, word: ok, sentence: ctx, note: nota(pk, ref), full: fill(ctx, ok0) };
   },
 };
 const POOL = { v: ["esfr", "fres", "listen", "write"], s: ["order", "listenorder"], q: ["cloze"], w: ["ctx", "letter", "hunt", "dictation", "tilde"] };
@@ -602,7 +672,7 @@ function runEx() {
         warn ? h("p", null, warn) : null,
         !ok && ex.tries < 2 ? h("p", { class: "small" }, "Este ejercicio vuelve al final de la lección.") : null,
         !ok && answerLine ? h("p", null, "Correcto: ", h("b", { lang: pk === "fr" ? "fr" : "es" }, answerLine)) : (ok && ex.full ? h("p", null, h("b", null, ex.full)) : null),
-        ex.note ? h("p", { class: "fb-note" + (ok ? " muted" : "") }, ex.note) : null,
+        ex.note ? h(ex.note.nodeType ? "div" : "p", { class: "fb-note" + (ok ? " muted" : "") }, ex.note) : null,
         h("div", { class: "fb-actions" },
           TTS && ex.speakOk ? h("button", { class: "icon-btn", "aria-label": "Escuchar", onclick: () => speak(ex.speakOk, "fr-FR") }, icon("speaker")) : null,
           h("button", { class: "btn " + (ok ? "ok" : "bad") + " big", "data-cont": true, onclick: () => { L.pos++; runEx(); } }, "Continuar"))));
