@@ -91,17 +91,107 @@ function save() {
   if (p && p.name !== S.name && S.name) { p.name = S.name; saveProfiles(); }
 }
 function usar(id) { CUR = id; S = load(id); PROF.last = id; saveProfiles(); }
-function nuevoPerfil(name, goal) {
+function nuevoPerfil(name, goal, av) {
   let n = PROF.list.length + 1; while (PROF.list.some((p) => p.id === "p" + n)) n++;
   const id = "p" + n, used = PROF.list.map((p) => p.color);
-  PROF.list.push({ id, name, color: COLORES.find((c) => !used.includes(c)) || COLORES[PROF.list.length % COLORES.length] });
+  PROF.list.push({ id, name, av: av || avAzar(), color: COLORES.find((c) => !used.includes(c)) || COLORES[PROF.list.length % COLORES.length] });
   CUR = id; S = blankState(); S.name = name; S.goal = goal; PROF.last = id; saveProfiles(); save();
 }
 function borrarPerfil(id) {
   lsDel(stateKey(id)); PROF.list = PROF.list.filter((p) => p.id !== id);
   if (PROF.last === id) PROF.last = null; saveProfiles(); CUR = null; S = blankState();
 }
-const avatar = (p, cls) => h("span", { class: "avatar " + (cls || ""), style: "--av:" + p.color, "aria-hidden": "true" }, (p.name || "?").trim().charAt(0).toUpperCase());
+
+/* ---------- muñequitos: avatares SVG por piezas ---------- */
+const AV = {
+  bg: ["#cfe9e1", "#d9defc", "#fbd9e3", "#fde3c2", "#e4d9fb", "#d2ecf7", "#e9efc4", "#f2f0f7"],
+  skin: ["#ffe0c7", "#f6c9a2", "#e8ae84", "#c98a5e", "#a0663f", "#6f4428"],
+  hairC: ["#2a2230", "#4a2e20", "#8a5530", "#e0b35a", "#c2502a", "#a7a5ad", "#3d5bd9", "#e0569b"],
+  shirt: ["#0a7a66", "#2338b4", "#cc3326", "#e19b00", "#6a3bb4", "#1c2040", "#f6f5fb", "#1f7fa8"],
+  hair: ["corto", "raya", "punta", "rapado", "rizos", "largo", "mono", "cola", "calvo"],
+  eyes: ["puntos", "felices", "grandes", "guiño", "dormidos"],
+  mouth: ["sonrisa", "risa", "o", "seria", "lengua"],
+  beard: ["no", "barba", "bigote", "chivita"],
+  acc: ["no", "lentes", "gafas", "gorra", "audífonos", "lazo", "flor"],
+};
+const AV_NOMBRE = {
+  hair: { corto: "Corto", raya: "De lado", punta: "En punta", rapado: "Rapado", rizos: "Rizos", largo: "Largo", mono: "Moño", cola: "Cola", calvo: "Sin pelo" },
+  eyes: { puntos: "Normales", felices: "Felices", grandes: "Grandes", "guiño": "Guiño", dormidos: "Dormidos" },
+  mouth: { sonrisa: "Sonrisa", risa: "Risa", o: "Sorpresa", seria: "Seria", lengua: "Lengua" },
+  beard: { no: "Nada", barba: "Barba", bigote: "Bigote", chivita: "Chivita" },
+  acc: { no: "Nada", lentes: "Lentes", gafas: "Gafas de sol", gorra: "Gorra", "audífonos": "Audífonos", lazo: "Lazo", flor: "Flor" },
+};
+function avAzar() {
+  const r = (a) => Math.floor(Math.random() * a.length);
+  return { bg: r(AV.bg), skin: r(AV.skin), hairC: r(AV.hairC.slice(0, 6)), shirt: r(AV.shirt), hair: AV.hair[r(AV.hair.slice(0, 8))],
+    eyes: AV.eyes[r(AV.eyes.slice(0, 3))], mouth: AV.mouth[r(AV.mouth.slice(0, 2))], beard: Math.random() < 0.2 ? AV.beard[1 + r([1, 2, 3])] : "no",
+    acc: Math.random() < 0.35 ? AV.acc[1 + r([1, 2, 3, 4, 5, 6])] : "no" };
+}
+function oscuro(hex, f) { const n = parseInt(hex.slice(1), 16); const c = (s) => Math.max(0, Math.round(((n >> s) & 255) * f)); return "rgb(" + c(16) + "," + c(8) + "," + c(0) + ")"; }
+function avSVG(a) {
+  const piel = AV.skin[a.skin] || AV.skin[1], pelo = AV.hairC[a.hairC] || AV.hairC[0], ropa = AV.shirt[a.shirt] || AV.shirt[0];
+  const tinta = "#2a2238", sombra = oscuro(piel, 0.88);
+  const st = (d, w) => `<path d="${d}" fill="none" stroke="${tinta}" stroke-width="${w || 2.6}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  let atras = "", frente = "", ojos = "", boca = "", barba = "", acc = "";
+  const P = (d, f) => `<path d="${d}" fill="${f || pelo}"/>`;
+  const flequillo = P("M27 47 C26 29 38 20 51 20 C64 20 74 29 73 47 C69 39 61 33 50 33 C41 33 33 38 27 47Z");
+  switch (a.hair) {
+    case "corto": frente = flequillo; break;
+    case "raya": frente = P("M27 49 C24 29 39 18 52 19 C66 20 76 30 73 49 C71 41 67 35 60 32 C51 39 38 41 27 49Z"); break;
+    case "punta": frente = P("M27 45 L29 26 L36 31 L39 17 L46 28 L51 13 L56 27 L63 17 L65 30 L72 24 L73 45 C67 37 59 33 50 33 C41 33 33 37 27 45Z"); break;
+    case "rapado": frente = `<path d="M28 43 C30 28 40 23 50 23 C60 23 70 28 72 43 C66 35 58 31 50 31 C42 31 34 35 28 43Z" fill="${pelo}" opacity=".7"/>`; break;
+    case "rizos": {
+      const b = [[24, 48], [23, 36], [29, 25], [39, 18], [50, 15], [61, 18], [71, 25], [77, 36], [76, 48]];
+      atras = b.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="10" fill="${pelo}"/>`).join("") + `<circle cx="50" cy="36" r="24" fill="${pelo}"/>`;
+      frente = [[33, 31], [42, 27], [51, 26], [60, 27], [68, 32]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="7" fill="${pelo}"/>`).join(""); break;
+    }
+    case "largo": atras = P("M22 46 C22 22 36 15 50 15 C64 15 78 22 78 46 L81 86 C70 90 30 90 19 86Z"); frente = P("M27 50 C24 29 38 18 51 18 C65 18 76 29 73 50 C70 40 64 33 55 31 C50 37 38 43 27 50Z"); break;
+    case "mono": atras = `<circle cx="50" cy="15" r="10" fill="${pelo}"/>`; frente = flequillo; break;
+    case "cola": atras = `<path d="M70 38 C86 42 88 66 78 80 C76 66 72 54 66 46Z" fill="${pelo}"/>`; frente = flequillo; break;
+    default: frente = "";
+  }
+  switch (a.eyes) {
+    case "felices": ojos = st("M37 51 Q41 46 45 51") + st("M55 51 Q59 46 63 51"); break;
+    case "grandes": ojos = [41, 59].map((x) => `<circle cx="${x}" cy="50" r="5.2" fill="#fff"/><circle cx="${x}" cy="50.5" r="3.4" fill="${tinta}"/><circle cx="${x + 1.3}" cy="49" r="1.2" fill="#fff"/>`).join(""); break;
+    case "guiño": ojos = `<circle cx="41" cy="50" r="3.2" fill="${tinta}"/>` + st("M55 51 Q59 46 63 51"); break;
+    case "dormidos": ojos = st("M37 51 Q41 54 45 51") + st("M55 51 Q59 54 63 51"); break;
+    default: ojos = `<circle cx="41" cy="50" r="3.2" fill="${tinta}"/><circle cx="59" cy="50" r="3.2" fill="${tinta}"/>`;
+  }
+  switch (a.mouth) {
+    case "risa": boca = `<path d="M41 60 Q50 73 59 60Z" fill="#7a2630" stroke="${tinta}" stroke-width="2" stroke-linejoin="round"/><path d="M43 61 L57 61 L56 63 L44 63Z" fill="#fff"/>`; break;
+    case "o": boca = `<ellipse cx="50" cy="63" rx="3.6" ry="4.4" fill="#7a2630" stroke="${tinta}" stroke-width="2"/>`; break;
+    case "seria": boca = st("M44 63 L56 63"); break;
+    case "lengua": boca = `<path d="M50 63 C50 70 57 70 56 63Z" fill="#ef7f94" stroke="${tinta}" stroke-width="1.6"/>` + st("M42 61 Q50 67 58 61"); break;
+    default: boca = st("M43 61 Q50 67 57 61");
+  }
+  switch (a.beard) {
+    case "barba": barba = P("M27 52 C28 73 39 80 50 80 C61 80 72 73 73 52 C70 60 64 66 58 66 Q50 63 42 66 C36 66 30 60 27 52Z"); break;
+    case "bigote": barba = P("M41 59.5 Q45.5 55.5 50 58.5 Q54.5 55.5 59 59.5 Q54.5 62 50 60.5 Q45.5 62 41 59.5Z"); break;
+    case "chivita": barba = P("M44 68 Q50 66 56 68 Q55 76 50 77 Q45 76 44 68Z"); break;
+  }
+  switch (a.acc) {
+    case "lentes": acc = `<g fill="rgba(255,255,255,.25)" stroke="${tinta}" stroke-width="2.2"><circle cx="41" cy="50" r="7"/><circle cx="59" cy="50" r="7"/></g>` + st("M48 50 L52 50", 2.2) + st("M34 49 L28 47", 2.2) + st("M66 49 L72 47", 2.2); break;
+    case "gafas": acc = `<path d="M32 45 H48 V51 Q48 57 40 57 Q32 57 32 51Z M52 45 H68 V51 Q68 57 60 57 Q52 57 52 51Z" fill="${tinta}"/>` + st("M48 47 L52 47", 2.4) + `<path d="M35 47 L39 47" stroke="#fff" stroke-opacity=".5" stroke-width="2" stroke-linecap="round"/>`; break;
+    case "gorra": acc = `<path d="M25 40 C25 22 37 15 50 15 C63 15 75 22 75 40Z" fill="${ropa}"/><path d="M48 38 C60 35 76 36 86 41 C77 44 62 43 48 42Z" fill="${oscuro(ropa.length === 7 ? ropa : "#1c2040", 0.75)}"/><circle cx="50" cy="15" r="3" fill="${oscuro(ropa, 0.75)}"/>`; break;
+    case "audífonos": acc = `<path d="M24 50 C22 22 78 22 76 50" fill="none" stroke="${tinta}" stroke-width="4" stroke-linecap="round"/><rect x="18" y="44" width="10" height="16" rx="5" fill="${ropa}" stroke="${tinta}" stroke-width="2"/><rect x="72" y="44" width="10" height="16" rx="5" fill="${ropa}" stroke="${tinta}" stroke-width="2"/>`; break;
+    case "lazo": acc = `<g transform="translate(67 24) rotate(18)" stroke="${tinta}" stroke-width="1.6" stroke-linejoin="round"><path d="M0 0 L-11 -7 L-11 7Z M0 0 L11 -7 L11 7Z" fill="#e0569b"/><circle r="3" fill="#e0569b"/></g>`; break;
+    case "flor": acc = `<g transform="translate(69 27)">${[0, 72, 144, 216, 288].map((r) => `<ellipse rx="3.6" ry="6" cy="-5" transform="rotate(${r})" fill="#fff" stroke="${tinta}" stroke-width="1.2"/>`).join("")}<circle r="3.4" fill="#ffc548" stroke="${tinta}" stroke-width="1.2"/></g>`; break;
+  }
+  const gorra = a.acc === "gorra";
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">` +
+    `<rect width="100" height="100" fill="${AV.bg[a.bg] || AV.bg[0]}"/>` +
+    (gorra && a.hair !== "largo" && a.hair !== "cola" ? "" : atras) +
+    `<path d="M14 104 C14 82 30 74 50 74 C70 74 86 82 86 104Z" fill="${ropa}"/>` +
+    `<path d="M43 63 H57 V76 Q50 80 43 76Z" fill="${sombra}"/>` +
+    `<circle cx="27" cy="52" r="6" fill="${piel}"/><circle cx="73" cy="52" r="6" fill="${piel}"/>` +
+    `<ellipse cx="50" cy="49" rx="23" ry="25" fill="${piel}"/>` +
+    `<ellipse cx="35" cy="58" rx="4.5" ry="2.6" fill="#f07a8a" opacity=".35"/><ellipse cx="65" cy="58" rx="4.5" ry="2.6" fill="#f07a8a" opacity=".35"/>` +
+    `<path d="M49 54 Q51 57 49 58" fill="none" stroke="${sombra}" stroke-width="2" stroke-linecap="round"/>` +
+    barba + boca + (gorra ? "" : frente) + ojos + acc + `</svg>`;
+}
+const avatar = (p, cls) => p.av
+  ? h("span", { class: "avatar svg " + (cls || ""), "aria-hidden": "true", html: avSVG(p.av) })
+  : h("span", { class: "avatar " + (cls || ""), style: "--av:" + p.color, "aria-hidden": "true" }, (p.name || "?").trim().charAt(0).toUpperCase());
 const perfilActual = () => PROF.list.find((p) => p.id === CUR);
 
 const P = {
@@ -392,30 +482,70 @@ function toast(msg) {
 }
 
 /* ---------- bienvenida ---------- */
+let BORRADOR = null;
 function Welcome() {
-  let goal = 60;
+  if (!BORRADOR) BORRADOR = { name: "", goal: 60, av: avAzar() };
+  const B = BORRADOR;
+  let goal = B.goal;
   const goals = [[30, "Relajado", "unos 10 min al día"], [60, "Constante", "unos 20 min al día"], [90, "Intenso", "unos 30 min al día"]];
   const chips = h("div", { class: "goal-row", role: "radiogroup", "aria-label": "Meta diaria" },
-    goals.map(([xp, n, d]) => h("button", { class: "goal" + (xp === goal ? " on" : ""), role: "radio", "aria-checked": xp === goal ? "true" : "false", onclick: (e) => { goal = xp; chips.querySelectorAll(".goal").forEach((b) => { b.classList.remove("on"); b.setAttribute("aria-checked", "false"); }); e.currentTarget.classList.add("on"); e.currentTarget.setAttribute("aria-checked", "true"); } },
+    goals.map(([xp, n, d]) => h("button", { class: "goal" + (xp === goal ? " on" : ""), role: "radio", "aria-checked": xp === goal ? "true" : "false", onclick: (e) => { goal = xp; B.goal = xp; chips.querySelectorAll(".goal").forEach((b) => { b.classList.remove("on"); b.setAttribute("aria-checked", "false"); }); e.currentTarget.classList.add("on"); e.currentTarget.setAttribute("aria-checked", "true"); } },
       h("b", null, n), h("span", null, d), h("small", null, xp + " XP"))));
-  const name = h("input", { id: "name", type: "text", placeholder: "Tu nombre", value: "", autocomplete: "off", maxlength: "24", "data-autofocus": true });
+  const name = h("input", { id: "name", type: "text", placeholder: "Tu nombre", value: B.name, autocomplete: "off", maxlength: "24", "data-autofocus": true });
+  name.addEventListener("input", () => { B.name = name.value; });
+  const prev = h("span", { class: "avatar svg xl", "aria-hidden": "true", html: avSVG(B.av) });
+  const elegir = h("div", { class: "field" }, h("span", null, "Tu muñequito"),
+    h("div", { class: "av-pick" }, prev,
+      h("div", { class: "av-actions" },
+        h("button", { class: "btn ghost", onclick: () => { B.av = avAzar(); prev.innerHTML = avSVG(B.av); } }, "Otro al azar"),
+        h("button", { class: "btn ghost", onclick: () => Muneco(B.av, "Tu muñequito", (a) => { B.av = a; Welcome(); }, Welcome) }, "Personalizar"))));
   const err = h("p", { class: "small err", hidden: true });
   const go = () => {
     const n = name.value.trim();
     if (!n) { err.textContent = "Escribe tu nombre para crear tu perfil."; err.hidden = false; name.focus(); return; }
     if (PROF.list.some((p) => p.name.toLowerCase() === n.toLowerCase())) { err.textContent = "Ya hay un perfil llamado " + n + ". Usa otro nombre o vuelve y elígelo."; err.hidden = false; name.focus(); return; }
-    nuevoPerfil(n, goal); Home();
+    nuevoPerfil(n, goal, B.av); BORRADOR = null; Home();
   };
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
   const otros = PROF.list.length > 0;
   screen(h("main", { class: "welcome" },
-    otros ? h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Volver", onclick: Perfiles }, icon("back")), h("h1", null, "Nueva persona"))
+    otros ? h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Volver", onclick: () => { BORRADOR = null; Perfiles(); } }, icon("back")), h("h1", null, "Nueva persona"))
           : h("div", { class: "brand" }, h("span", { class: "brand-mark" }, "C"), h("span", null, "Cahier")),
     h("h1", { class: "display" }, otros ? "Tu propio cuaderno, con tu propio plan." : "Dos cuadernos, un mes, avance de verdad."),
     h("p", { class: "lead" }, "Un cuaderno de ", h("b", { class: "t-es" }, "ortografía en español"), " y otro de ", h("b", { class: "t-fr" }, "francés"), ". Cada uno empieza con una prueba corta, te arma un plan de 30 días a tu nivel y repite justo lo que fallas hasta que se te queda."),
     h("label", { class: "field", for: "name" }, h("span", null, "¿Cómo te llamas?"), name, err),
+    elegir,
     h("div", { class: "field" }, h("span", null, "Meta diaria"), chips),
     h("button", { class: "btn primary big", onclick: go }, "Abrir mis cuadernos")
+  ), "paper");
+}
+
+/* ---------- editor del muñequito ---------- */
+function Muneco(inicial, titulo, onSave, onCancel) {
+  const a = { ...inicial };
+  const grande = h("div", { class: "av-big", "aria-hidden": "true" });
+  const cuerpo = h("div", { class: "av-sections" });
+  const colores = { bg: "Fondo", skin: "Piel", hairC: "Color del pelo", shirt: "Ropa" };
+  const formas = { hair: "Pelo", eyes: "Ojos", mouth: "Boca", beard: "Barba y bigote", acc: "Accesorio" };
+  const orden = ["hair", "hairC", "skin", "eyes", "mouth", "beard", "acc", "shirt", "bg"];
+  const draw = () => {
+    grande.innerHTML = avSVG(a);
+    cuerpo.replaceChildren(...orden.map((k) => {
+      const esColor = k in colores;
+      const opts = esColor
+        ? AV[k].map((c, i) => h("button", { class: "sw" + (a[k] === i ? " on" : ""), style: "--sw:" + c, "aria-label": colores[k] + " " + (i + 1), "aria-pressed": a[k] === i ? "true" : "false", onclick: () => { a[k] = i; draw(); } }))
+        : AV[k].map((v) => h("button", { class: "th" + (a[k] === v ? " on" : ""), title: AV_NOMBRE[k][v], "aria-label": AV_NOMBRE[k][v], "aria-pressed": a[k] === v ? "true" : "false", html: avSVG({ ...a, [k]: v }), onclick: () => { a[k] = v; draw(); } }));
+      return h("section", { class: "av-sec" }, h("h3", null, esColor ? colores[k] : formas[k]), h("div", { class: esColor ? "sw-row" : "th-row" }, opts));
+    }));
+  };
+  draw();
+  screen(h("main", { class: "av-editor" },
+    h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Volver sin guardar", onclick: onCancel }, icon("back")), h("h1", null, titulo)),
+    h("div", { class: "av-top" }, grande,
+      h("div", { class: "av-actions" },
+        h("button", { class: "btn ghost", onclick: () => { Object.assign(a, avAzar()); draw(); } }, "Sorpréndeme"),
+        h("button", { class: "btn primary", "data-autofocus": true, onclick: () => onSave(a) }, "Guardar"))),
+    cuerpo
   ), "paper");
 }
 
@@ -491,7 +621,11 @@ function Settings() {
       const inp = h("input", { type: "text", value: S.name, maxlength: "24", "aria-label": "Nombre" });
       const guardar = () => { const n = inp.value.trim(); if (!n || n === S.name) return; if (PROF.list.some((p) => p.id !== CUR && p.name.toLowerCase() === n.toLowerCase())) { toast("Ya existe un perfil con ese nombre"); return; } S.name = n; save(); toast("Nombre actualizado"); };
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") guardar(); });
-      return h("section", { class: "card" }, h("h3", null, "Perfil"), h("div", { class: "row-wrap" }, inp, h("button", { class: "btn ghost", onclick: guardar }, "Guardar nombre")));
+      const yo = perfilActual();
+      return h("section", { class: "card" }, h("h3", null, "Perfil"),
+        h("div", { class: "av-pick" }, avatar(yo || { name: S.name, color: COLORES[0] }, "xl"),
+          h("div", { class: "av-actions" }, h("button", { class: "btn primary", onclick: () => Muneco(yo.av || avAzar(), "Tu muñequito", (a) => { yo.av = a; saveProfiles(); toast("Muñequito guardado"); Settings(); }, Settings) }, yo && yo.av ? "Cambiar muñequito" : "Crear mi muñequito"))),
+        h("div", { class: "row-wrap" }, inp, h("button", { class: "btn ghost", onclick: guardar }, "Guardar nombre")));
     })(),
     h("section", { class: "card" }, h("h3", null, "Meta diaria"),
       h("div", { class: "row-wrap" }, [30, 60, 90].map((g) => h("button", { class: "btn " + (S.goal === g ? "primary" : "ghost"), onclick: () => { S.goal = g; save(); Settings(); } }, g + " XP")))),

@@ -135,6 +135,23 @@ kbd { display: none; }
 .avatar { flex: none; width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--av, var(--ink)); color: #fff; font-family: var(--f-hand); font-size: 24px; transform: rotate(-4deg); }
 .avatar.sm { width: 32px; height: 32px; border-radius: 10px; font-size: 17px; }
 .avatar.plus { background: transparent; color: var(--ink-soft); border: 2px dashed var(--rule); font-family: var(--f-display); transform: none; }
+.avatar.svg { padding: 0; overflow: hidden; transform: none; background: none; }
+.avatar.svg svg, .av-big svg, .th svg { display: block; width: 100%; height: 100%; }
+.avatar.xl { width: 96px; height: 96px; border-radius: 28px; }
+.av-pick { display: flex; align-items: center; gap: 16px; }
+.av-actions { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+.av-editor { gap: 16px; }
+.av-top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px; margin-inline: -16px; padding: 10px 16px; background: var(--paper); border-bottom: 1px solid var(--rule); }
+.av-big { width: 120px; height: 120px; flex: none; border-radius: 34px; overflow: hidden; box-shadow: 0 4px 0 var(--rule); }
+.av-sections { display: flex; flex-direction: column; gap: 18px; }
+.av-sec h3 { font-size: 16px; margin-bottom: 8px; }
+.th-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.th { aspect-ratio: 1; padding: 0; border: 3px solid transparent; border-radius: 18px; overflow: hidden; background: none; cursor: pointer; }
+.th.on { border-color: var(--acc); box-shadow: 0 0 0 2px var(--sheet) inset; }
+.sw-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.sw { width: 38px; height: 38px; border-radius: 50%; background: var(--sw); border: 2px solid var(--rule); cursor: pointer; padding: 0; }
+.sw.on { outline: 3px solid var(--acc); outline-offset: 2px; }
+.th:focus-visible, .sw:focus-visible { outline: 3px solid var(--acc); outline-offset: 2px; }
 .who { background: none; border: 0; padding: 0; cursor: pointer; border-radius: 10px; }
 .who:focus-visible { outline: 3px solid var(--acc); outline-offset: 2px; }
 .err { color: var(--red); font-weight: 400; }
