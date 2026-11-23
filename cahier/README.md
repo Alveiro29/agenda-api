@@ -1,6 +1,8 @@
 # Cahier — ortografía en español y francés en 30 días
 
-App web sin servidor ni build: abre `index.html` en el navegador y funciona.
+App web sin servidor: abre `index.html` en el navegador y funciona.
+Para tener un solo archivo portátil: `node scripts/build-cahier.js` genera
+`dist/Cahier.html` (todo incluido, se abre con doble clic).
 El progreso se guarda en el `localStorage` del navegador.
 
 ## Dos cuadernos separados

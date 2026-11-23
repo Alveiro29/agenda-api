@@ -1,0 +1,1399 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--BEGIN-->
+<title>Cahier</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Kalam:wght@700&display=swap">
+<style>
+/* Layout: una columna tipo app sobre papel Seyès (cuadrícula escolar francesa); cada cuaderno tiene su tinta. */
+:root {
+  --paper: #f6f5fb; --sheet: #ffffff; --line: #e6e2f6; --line-strong: #d3cdee; --margin: #ef9e98;
+  --ink: #1c2040; --ink-soft: #5c6084; --rule: #dcd9ea;
+  --fr: #2338b4; --fr-deep: #16257f; --fr-soft: #e5e8fc;
+  --es: #0a7a66; --es-deep: #055646; --es-soft: #dcf2ec;
+  --red: #cc3326; --red-soft: #fde6e3; --green: #1d8a3b; --green-soft: #e0f4e4; --gold: #e19b00;
+  --acc: var(--es); --acc-deep: var(--es-deep); --acc-soft: var(--es-soft);
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-hand: "Kalam", "Comic Sans MS", cursive;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #121729; --sheet: #1a2038; --line: #1e2542; --line-strong: #283058; --margin: #6e3442;
+  --ink: #eceefb; --ink-soft: #a5aacb; --rule: #2d3458;
+  --fr: #8d9dff; --fr-deep: #5d6fe0; --fr-soft: #232b5a;
+  --es: #4fd2b3; --es-deep: #21a184; --es-soft: #15393a;
+  --red: #ff7d70; --red-soft: #3e1e25; --green: #5bd57b; --green-soft: #173823; --gold: #ffc548;
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --paper: #121729; --sheet: #1a2038; --line: #1e2542; --line-strong: #283058; --margin: #6e3442;
+  --ink: #eceefb; --ink-soft: #a5aacb; --rule: #2d3458;
+  --fr: #8d9dff; --fr-deep: #5d6fe0; --fr-soft: #232b5a;
+  --es: #4fd2b3; --es-deep: #21a184; --es-soft: #15393a;
+  --red: #ff7d70; --red-soft: #3e1e25; --green: #5bd57b; --green-soft: #173823; --gold: #ffc548;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { min-height: 100%; }
+body {
+  margin: 0; font: 17px/1.5 var(--f-body); color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--line-strong) 1px, transparent 1px),
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 100% 32px, 100% 8px, 32px 32px;
+  -webkit-tap-highlight-color: transparent;
+}
+.fr { --acc: var(--fr); --acc-deep: var(--fr-deep); --acc-soft: var(--fr-soft); }
+.es { --acc: var(--es); --acc-deep: var(--es-deep); --acc-soft: var(--es-soft); }
+.app { max-width: 600px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px 40px; }
+main { display: flex; flex-direction: column; gap: 18px; }
+h1, h2, h3 { font-family: var(--f-display); line-height: 1.15; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.display { font-size: clamp(30px, 7vw, 42px); font-weight: 800; letter-spacing: -0.02em; }
+h2 { font-size: 22px; font-weight: 800; }
+h3 { font-size: 17px; font-weight: 600; }
+.muted { color: var(--ink-soft); }
+.small { font-size: 14px; }
+.center { text-align: center; display: flex; justify-content: center; }
+.hand { font-family: var(--f-hand); font-weight: 700; }
+.hand.big { font-size: 30px; line-height: 1.2; color: var(--acc); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.grow { flex: 1; min-width: 0; }
+.ic { display: inline-flex; width: 1.15em; height: 1.15em; flex: none; }
+.ic svg { width: 100%; height: 100%; }
+.t-es { color: var(--es); } .t-fr { color: var(--fr); }
+.ex-title { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--acc); }
+.row-wrap { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* botones */
+button { font: inherit; color: inherit; cursor: pointer; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: 2px solid transparent; border-radius: var(--r); padding: 10px 18px; font-weight: 700;
+  background: var(--sheet); transition: transform .08s, filter .15s;
+}
+.btn:active:not(:disabled) { transform: translateY(2px); }
+.btn.primary { background: var(--acc); color: var(--sheet); box-shadow: 0 4px 0 var(--acc-deep); }
+.btn.primary:active:not(:disabled) { box-shadow: 0 2px 0 var(--acc-deep); }
+.btn.primary:disabled { background: var(--rule); color: var(--ink-soft); box-shadow: 0 4px 0 var(--line-strong); }
+.btn.ghost { border-color: var(--rule); box-shadow: 0 3px 0 var(--rule); }
+.btn.danger { border-color: var(--red); color: var(--red); background: var(--sheet); }
+.btn.ok { background: var(--green); color: var(--sheet); box-shadow: 0 4px 0 color-mix(in srgb, var(--green) 70%, #000); }
+.btn.bad { background: var(--red); color: var(--sheet); box-shadow: 0 4px 0 color-mix(in srgb, var(--red) 70%, #000); }
+.btn.big { width: 100%; padding: 14px 18px; font-size: 18px; }
+.link { background: none; border: 0; padding: 4px 0; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-soft); flex: none; }
+.icon-btn:hover { background: var(--acc-soft); color: var(--acc); }
+.icon-btn .ic { width: 24px; height: 24px; }
+.icon-btn.sm { width: 32px; height: 32px; }
+.icon-btn.sm .ic { width: 20px; height: 20px; }
+.chip { display: inline-block; font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 99px; background: var(--acc-soft); color: var(--acc); white-space: nowrap; }
+.chip.ghost { background: transparent; border: 1.5px solid var(--rule); color: var(--ink-soft); }
+kbd { display: none; }
+@media (hover: hover) and (pointer: fine) { kbd { display: inline-block; font: 700 11px var(--f-body); color: var(--ink-soft); border: 1.5px solid var(--rule); border-radius: 6px; padding: 0 6px; margin-right: 10px; } }
+
+/* marca */
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--f-display); font-weight: 800; font-size: 20px; }
+.brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: var(--ink); color: var(--paper); font-family: var(--f-hand); font-size: 22px; transform: rotate(-4deg); }
+
+/* bienvenida */
+.welcome { padding-top: 24px; gap: 22px; }
+.lead { font-size: 18px; max-width: 34em; }
+.field { display: flex; flex-direction: column; gap: 8px; font-weight: 700; }
+.field input { font: inherit; font-weight: 400; padding: 12px 14px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); color: var(--ink); }
+.field input:focus { border-color: var(--acc); outline: none; }
+.goal-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.goal { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 12px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); font-weight: 400; }
+.goal b { font-family: var(--f-display); }
+.goal span { font-size: 13px; color: var(--ink-soft); }
+.goal small { font-size: 12px; font-weight: 700; color: var(--es); }
+.goal.on { border-color: var(--es); background: var(--es-soft); }
+@media (max-width: 420px) { .goal-row { grid-template-columns: 1fr; } .goal { flex-direction: row; align-items: baseline; gap: 10px; } .goal small { margin-left: auto; } }
+
+/* inicio */
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stats { display: flex; gap: 14px; }
+.stat { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat.flame { color: #e8590c; }
+.stat.xp { color: var(--gold); }
+.stat b { color: var(--ink); }
+.hello { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.hello > div:first-child { min-width: 0; }
+.goal-ring { position: relative; width: 76px; height: 76px; flex: none; display: grid; place-items: center; }
+.goal-ring > span:last-child { position: absolute; font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.goal-ring > span:last-child b { color: var(--ink); font-size: 15px; }
+.ring { position: absolute; inset: 0; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-bg { fill: none; stroke: var(--rule); stroke-width: 6; }
+.ring-fg { fill: none; stroke: var(--gold); stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset .6s; }
+
+.panel-card {
+  position: relative; display: flex; flex-direction: column; gap: 12px;
+  background: var(--sheet); border-radius: 6px var(--r) var(--r) 6px; padding: 18px 18px 18px 30px;
+  box-shadow: 0 1px 0 var(--rule), 0 8px 24px -14px color-mix(in srgb, var(--ink) 40%, transparent);
+}
+.panel-card::before { content: ""; position: absolute; left: 16px; top: 0; bottom: 0; width: 2px; background: var(--margin); }
+.panel-card::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; border-radius: 6px 0 0 6px; background: var(--acc); }
+.pc-head { display: flex; gap: 14px; align-items: center; }
+.pc-tab { flex: none; width: 46px; height: 46px; display: grid; place-items: center; border-radius: 12px; background: var(--acc-soft); color: var(--acc); font-family: var(--f-display); font-weight: 800; font-size: 17px; }
+.pc-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+.pc-next { font-weight: 700; }
+.panel-card .btn { align-self: flex-start; }
+.bar { height: 12px; border-radius: 99px; background: var(--rule); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 99px; background: var(--acc); transition: width .4s; }
+.foot { display: flex; flex-wrap: wrap; gap: 6px 20px; padding-top: 8px; }
+
+/* barras de sección */
+.subbar { display: flex; align-items: center; gap: 8px; }
+.subbar h1 { font-size: 20px; font-weight: 800; }
+.subbar.sticky { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--paper); margin-inline: -8px; padding: 6px 8px; border-bottom: 1px solid var(--rule); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+.center-col { padding-top: 4px; }
+.sheet-card { position: relative; display: flex; flex-direction: column; gap: 14px; background: var(--sheet); border-radius: var(--r); padding: 22px; box-shadow: 0 1px 0 var(--rule), 0 10px 30px -18px color-mix(in srgb, var(--ink) 50%, transparent); }
+.ticks { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.level-big { font-family: var(--f-display); font-weight: 800; font-size: 34px; color: var(--acc); }
+.week-h { margin-top: 6px; }
+.week { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.week li { display: grid; grid-template-columns: 62px 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--rule); }
+.week .d { font-size: 13px; font-weight: 700; color: var(--ink-soft); padding-top: 2px; }
+.settings .card { background: var(--sheet); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+
+/* camino de 30 días */
+.quick { display: flex; flex-wrap: wrap; gap: 10px; }
+.quick .btn { padding: 9px 14px; font-size: 15px; }
+.path { list-style: none; margin: 0; padding: 0 0 20px; display: flex; flex-direction: column; gap: 6px; }
+.week-label { align-self: center; margin: 16px 0 6px; font-family: var(--f-hand); font-size: 20px; color: var(--ink-soft); background: var(--paper); padding: 0 12px; }
+.node-row { display: flex; align-items: center; gap: 14px; padding-left: var(--x); }
+.node {
+  width: 64px; height: 64px; flex: none; border-radius: 50%; border: 0; display: grid; place-items: center;
+  background: var(--acc); color: var(--sheet); font-family: var(--f-display); font-size: 22px;
+  box-shadow: 0 5px 0 var(--acc-deep); transition: transform .1s;
+}
+.node .ic { width: 28px; height: 28px; }
+.node:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--acc-deep); }
+.node.done { background: var(--gold); box-shadow: 0 5px 0 color-mix(in srgb, var(--gold) 65%, #000); color: var(--sheet); }
+.node.locked { background: var(--rule); color: var(--ink-soft); box-shadow: 0 5px 0 var(--line-strong); }
+.node.locked .ic { width: 22px; height: 22px; }
+.node.special { border-radius: 18px; transform: rotate(45deg); }
+.node.special > * { transform: rotate(-45deg); }
+.node.special.final { width: 76px; height: 76px; }
+.node.current { animation: pulse 1.8s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { outline: 4px solid color-mix(in srgb, var(--acc) 35%, transparent); outline-offset: 3px; } 50% { outline: 4px solid color-mix(in srgb, var(--acc) 10%, transparent); outline-offset: 9px; } }
+.node-label { display: flex; flex-direction: column; min-width: 0; font-weight: 700; font-size: 15px; line-height: 1.25; background: color-mix(in srgb, var(--paper) 85%, transparent); border-radius: 8px; padding: 2px 6px; }
+.node-label small { font-size: 12px; color: var(--ink-soft); font-weight: 700; }
+.stars { display: inline-flex; gap: 2px; color: var(--rule); }
+.stars span { width: 16px; height: 16px; display: inline-flex; }
+.stars span.on { color: var(--gold); }
+.stars.big { justify-content: center; }
+.stars.big span { width: 44px; height: 44px; }
+
+.overlay { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-end; justify-content: center; background: color-mix(in srgb, var(--ink) 45%, transparent); padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.modal { width: 100%; max-width: 560px; background: var(--sheet); border-radius: 20px; padding: 22px; display: flex; flex-direction: column; gap: 12px; animation: up .22s ease-out; }
+.modal .row-wrap { justify-content: flex-end; margin-top: 6px; }
+@keyframes up { from { transform: translateY(30px); opacity: .4; } }
+.rule { font-family: var(--f-hand); font-size: 19px; line-height: 1.35; color: var(--acc); border-left: 3px solid var(--margin); padding-left: 12px; }
+
+/* reglas e intro */
+.note-card { background: var(--sheet); border-radius: var(--r); padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.tip { font-size: 17px; }
+.tip b, .note-card b { color: var(--acc); }
+.vocab { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+.vocab li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--line-strong); min-width: 0; }
+.vocab li b { color: var(--acc); }
+.vocab li .muted { font-size: 14px; flex-basis: 100%; padding-left: 38px; margin-top: -4px; }
+.vocab.ortho li .muted { padding-left: 0; }
+.vocab.ortho li { gap: 12px; }
+.red-pen { color: var(--red); text-decoration-thickness: 2px; font-family: var(--f-hand); }
+@media (max-width: 460px) { .vocab { grid-template-columns: 1fr; } }
+
+/* lección */
+.lesson-screen { padding-bottom: 0; }
+.lesson { min-height: calc(100vh - 12px); min-height: calc(100dvh - 12px); gap: 0; }
+.lbar { display: flex; align-items: center; gap: 12px; padding: 4px 0 12px; }
+.lbar .bar { height: 16px; }
+.combo { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: var(--ink-soft); font-variant-numeric: tabular-nums; min-width: 42px; }
+.combo.hot { color: #e8590c; }
+.stage { flex: 1; display: flex; flex-direction: column; gap: 18px; padding: 14px 0 20px; }
+.stage.is-ok .blank.filled { color: var(--green); border-color: var(--green); }
+.stage.is-bad .blank.filled { color: var(--red); border-color: var(--red); text-decoration: line-through; }
+.ex-body { display: flex; flex-direction: column; gap: 18px; }
+.prompt { font-family: var(--f-display); font-weight: 600; font-size: 26px; display: flex; align-items: center; gap: 8px; }
+.big-prompt { font-size: 32px; justify-content: center; text-align: center; padding: 20px 0; }
+.q-text { font-size: 22px; font-weight: 700; }
+.sentence { font-size: 24px; line-height: 1.6; background: var(--sheet); border-radius: var(--r); padding: 16px 18px; box-shadow: inset 4px 0 0 var(--margin); }
+.blank { display: inline-block; min-width: 3.5em; border-bottom: 3px solid var(--acc); text-align: center; padding: 0 4px; color: var(--acc); font-weight: 700; }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.opts.stack, .opts:has(.dont) { grid-template-columns: 1fr; }
+.opt { display: flex; align-items: center; text-align: left; padding: 14px 16px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); box-shadow: 0 3px 0 var(--rule); font-size: 18px; min-height: 58px; }
+.opt.sel { border-color: var(--acc); background: var(--acc-soft); box-shadow: 0 3px 0 var(--acc); color: var(--acc-deep); }
+.opt.dont { color: var(--ink-soft); font-size: 16px; min-height: 48px; border-style: dashed; }
+.opt.right { border-color: var(--green); background: var(--green-soft); }
+.opt.miss { border-color: var(--red); background: var(--red-soft); animation: shake .35s; }
+@media (max-width: 420px) { .opts { grid-template-columns: 1fr; } }
+.opts.two { grid-template-columns: 1fr 1fr; }
+.audio-row { display: flex; gap: 14px; align-items: center; justify-content: center; padding: 6px 0; }
+.audio-btn { width: 92px; height: 92px; border-radius: 26px; border: 0; background: var(--acc); color: var(--sheet); display: grid; place-items: center; box-shadow: 0 6px 0 var(--acc-deep); }
+.audio-btn .ic { width: 44px; height: 44px; }
+.audio-btn.sm { width: 60px; height: 60px; border-radius: 18px; }
+.audio-btn.sm .ic { width: 30px; height: 30px; }
+.audio-btn:active { transform: translateY(3px); box-shadow: 0 3px 0 var(--acc-deep); }
+.answer { font: inherit; font-size: 22px; padding: 14px 16px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); color: var(--ink); width: 100%; }
+.answer:focus { outline: none; border-color: var(--acc); }
+.keys { display: flex; flex-wrap: wrap; gap: 6px; }
+.key { min-width: 40px; height: 40px; border-radius: 10px; border: 1.5px solid var(--rule); background: var(--sheet); font-size: 18px; box-shadow: 0 2px 0 var(--rule); }
+.tile-line { min-height: 64px; display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; padding: 8px 0 12px; border-bottom: 2px solid var(--line-strong); background-image: linear-gradient(transparent 50px, var(--line-strong) 50px, var(--line-strong) 52px, transparent 52px); background-size: 100% 60px; }
+.tile-bank { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.tile { padding: 9px 14px; border-radius: 12px; border: 2px solid var(--rule); background: var(--sheet); box-shadow: 0 3px 0 var(--rule); font-size: 18px; }
+.pairs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pcol { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pbtn { padding: 12px; border-radius: var(--r); border: 2px solid var(--rule); background: var(--sheet); box-shadow: 0 3px 0 var(--rule); font-size: 16px; min-height: 56px; overflow-wrap: anywhere; }
+.pbtn.sel { border-color: var(--acc); background: var(--acc-soft); }
+.pbtn.matched { opacity: .35; border-style: dashed; box-shadow: none; }
+.pbtn.wrong { border-color: var(--red); background: var(--red-soft); animation: shake .35s; }
+.word-gap { font-family: var(--f-display); font-weight: 800; font-size: 44px; text-align: center; letter-spacing: .02em; }
+.gap { display: inline-block; min-width: .9em; border-bottom: 4px solid var(--acc); color: var(--acc); margin: 0 2px; }
+.letter-row { display: flex; gap: 14px; justify-content: center; }
+.letter-btn { min-width: 96px; height: 80px; border-radius: 18px; border: 2px solid var(--rule); background: var(--sheet); box-shadow: 0 4px 0 var(--rule); font-family: var(--f-display); font-weight: 800; font-size: 32px; padding: 0 16px; }
+.hunt-line { font-size: 24px; line-height: 2.2; background: var(--sheet); border-radius: var(--r); padding: 14px 16px; box-shadow: inset 4px 0 0 var(--margin); }
+.word-chip { border: 0; background: transparent; padding: 2px 4px; border-radius: 8px; font-size: inherit; border-bottom: 2px dotted var(--rule); }
+.word-chip:hover:not(:disabled) { background: var(--acc-soft); }
+.word-chip.target { color: var(--red); text-decoration: line-through; text-decoration-thickness: 2px; }
+.word-chip.target.fixed { color: var(--green); text-decoration: none; font-family: var(--f-hand); background: var(--green-soft); }
+.stage.is-bad .word-chip.target { text-decoration: none; color: var(--green); font-family: var(--f-hand); background: var(--green-soft); }
+.word-chip.miss { background: var(--red-soft); color: var(--red); }
+.tilde-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; font-family: var(--f-display); font-weight: 800; font-size: 46px; }
+.tl { min-width: 40px; text-align: center; display: inline-block; }
+.tl.vowel { border: 2px solid var(--rule); border-radius: 12px; background: var(--sheet); box-shadow: 0 4px 0 var(--rule); font-size: inherit; font-weight: inherit; font-family: inherit; padding: 0 8px; }
+.tl.vowel:hover:not(:disabled) { border-color: var(--acc); }
+.tl.fixed { color: var(--green); border-color: var(--green); }
+.tl.miss { color: var(--red); border-color: var(--red); }
+@keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+.checkbar { position: sticky; bottom: 0; margin-inline: -16px; padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--paper); border-top: 2px solid var(--rule); }
+.feedback { margin: -14px -16px calc(-16px - env(safe-area-inset-bottom, 0px)); padding: 16px 16px calc(18px + env(safe-area-inset-bottom, 0px)); animation: up .18s ease-out; }
+.feedback.ok { background: var(--green-soft); color: var(--green); }
+.feedback.bad { background: var(--red-soft); color: var(--red); }
+.fb-inner { display: flex; flex-direction: column; gap: 6px; }
+.fb-inner p { color: var(--ink); }
+.fb-inner b { color: inherit; }
+.feedback.ok .fb-inner b { color: var(--green); }
+.feedback.bad .fb-inner b { color: var(--red); }
+.fb-title { font-size: 26px; color: inherit !important; }
+.fb-note { font-size: 15px; }
+.fb-actions { display: flex; gap: 10px; align-items: center; margin-top: 8px; }
+.fb-actions .icon-btn { color: inherit; }
+
+/* resultados */
+.result { text-align: center; align-items: stretch; }
+.result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.result-grid > div { display: flex; flex-direction: column; padding: 12px; border-radius: var(--r); background: var(--acc-soft); }
+.result-grid b { font-family: var(--f-display); font-size: 26px; color: var(--acc); font-variant-numeric: tabular-nums; }
+.result-grid span { font-size: 13px; color: var(--ink-soft); }
+.result .row-wrap { justify-content: center; }
+.compare { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+.compare > div { display: grid; grid-template-columns: 52px 1fr 48px; gap: 10px; align-items: center; }
+.cbar { height: 18px; background: var(--rule); border-radius: 99px; overflow: hidden; }
+.cbar i { display: block; height: 100%; background: var(--acc); border-radius: 99px; }
+.cbar i.before { background: var(--ink-soft); }
+
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 40; background: var(--ink); color: var(--paper); padding: 10px 18px; border-radius: 12px; font-weight: 700; transition: opacity .3s; max-width: calc(100% - 32px); }
+.toast.out { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="app" class="app"></div>
+<script>
+/* Contenido didáctico de Cahier.
+ * FR: unidades de francés. Cada unidad: g = nivel (0 A0, 1 A1, 2 A2, 3 B1),
+ *   v = vocabulario [francés, español], s = frases [francés, español],
+ *   q = completar [frase con ___, correcta, [incorrectas]], r = regla corta.
+ * ES: unidades de ortografía. g = nivel (0 básico, 1 intermedio, 2 avanzado),
+ *   w = [forma correcta, forma incorrecta (varias con |), frase con ___].
+ */
+
+const FR = [
+  { id: 1, g: 0, t: "Saludos y cortesía",
+    tip: "<b>Bonjour</b> sirve para todo el día; <b>bonsoir</b> desde la tarde-noche. <b>Salut</b> es solo entre amigos. En francés se deja un espacio antes de <b>? ! : ;</b>",
+    r: "Bonjour todo el día, bonsoir de noche, salut entre amigos.",
+    v: [["bonjour", "hola (buenos días)"], ["bonsoir", "buenas noches (al llegar)"], ["salut", "hola (entre amigos)"], ["au revoir", "adiós"], ["merci", "gracias"], ["s'il vous plaît", "por favor"], ["oui", "sí"], ["non", "no"], ["excusez-moi", "disculpe"], ["à bientôt", "hasta pronto"]],
+    s: [["Bonjour, comment ça va ?", "Hola, ¿cómo estás?"], ["Ça va bien, merci.", "Estoy bien, gracias."], ["Au revoir et à bientôt !", "¡Adiós y hasta pronto!"], ["Merci beaucoup, madame.", "Muchas gracias, señora."]],
+    q: [["Comment ___ va ?", "ça", ["sa", "se"]], ["___ beaucoup !", "Merci", ["Mercy", "Bonjour"]], ["Au ___ !", "revoir", ["revoire", "voir"]]] },
+
+  { id: 2, g: 0, t: "Me presento y cuento",
+    tip: "Para la edad se usa <b>avoir</b> (tener): <b>j'ai vingt ans</b>. Para la ciudad, <b>à</b>: <b>j'habite à Paris</b>. Delante de vocal, <b>je</b> se convierte en <b>j'</b>.",
+    r: "La edad va con avoir: j'ai vingt ans. Ciudad con à.",
+    v: [["un", "uno"], ["deux", "dos"], ["trois", "tres"], ["quatre", "cuatro"], ["cinq", "cinco"], ["dix", "diez"], ["vingt", "veinte"], ["je m'appelle", "me llamo"], ["j'habite", "vivo"], ["j'ai vingt ans", "tengo veinte años"]],
+    s: [["Je m'appelle Marie.", "Me llamo Marie."], ["J'ai vingt ans.", "Tengo veinte años."], ["J'habite à Paris.", "Vivo en París."], ["Tu t'appelles comment ?", "¿Cómo te llamas?"]],
+    q: [["J'___ vingt ans.", "ai", ["suis", "as"]], ["Je m'___ Paul.", "appelle", ["appele", "apelle"]], ["J'habite ___ Lyon.", "à", ["en", "au"]]] },
+
+  { id: 3, g: 0, t: "Ser y los artículos",
+    tip: "<b>Être</b>: je suis, tu es, il/elle est, nous sommes, vous êtes, ils/elles sont. Artículos: <b>le</b> (masc.), <b>la</b> (fem.), <b>les</b> (plural); <b>un / une / des</b>.",
+    r: "Être: je suis, tu es, il est, nous sommes, vous êtes, ils sont.",
+    v: [["je suis", "yo soy"], ["tu es", "tú eres"], ["il est", "él es"], ["elle est", "ella es"], ["nous sommes", "nosotros somos"], ["vous êtes", "usted es / ustedes son"], ["ils sont", "ellos son"], ["le garçon", "el chico"], ["la fille", "la chica"], ["les amis", "los amigos"]],
+    s: [["Je suis dominicain.", "Soy dominicano."], ["Elle est professeure.", "Ella es profesora."], ["Nous sommes amis.", "Somos amigos."], ["Vous êtes français ?", "¿Usted es francés?"]],
+    q: [["Nous ___ contents.", "sommes", ["sont", "êtes"]], ["___ fille est grande.", "La", ["Le", "Les"]], ["Ils ___ à la maison.", "sont", ["est", "sommes"]], ["J'ai ___ chat.", "un", ["une", "des"]]] },
+
+  { id: 4, g: 0, t: "Tener y la familia",
+    tip: "<b>Avoir</b>: j'ai, tu as, il a, nous avons, vous avez, ils ont. Posesivos: <b>mon</b> père, <b>ma</b> mère, <b>mes</b> parents.",
+    r: "Avoir: j'ai, tu as, il a, nous avons, vous avez, ils ont. Mon/ma/mes.",
+    v: [["la mère", "la madre"], ["le père", "el padre"], ["le frère", "el hermano"], ["la sœur", "la hermana"], ["le fils", "el hijo"], ["la fille", "la hija"], ["les grands-parents", "los abuelos"], ["j'ai", "tengo"], ["tu as", "tienes"], ["ils ont", "ellos tienen"]],
+    s: [["J'ai deux frères.", "Tengo dos hermanos."], ["Ma sœur a dix ans.", "Mi hermana tiene diez años."], ["Mon père est médecin.", "Mi padre es médico."], ["Nous avons un chien.", "Tenemos un perro."]],
+    q: [["Tu ___ des enfants ?", "as", ["a", "es"]], ["___ mère est gentille.", "Ma", ["Mon", "Mes"]], ["Ils ___ une grande maison.", "ont", ["sont", "avons"]], ["Nous ___ un chien.", "avons", ["avez", "ont"]]] },
+
+  { id: 5, g: 1, t: "Comida y verbos en -er",
+    tip: "Verbos en -er: je mange, tu manges, il mange, nous <b>mangeons</b>, vous mangez, ils mangent. Para cantidades sin contar: <b>du</b> pain, <b>de la</b> viande, <b>de l'</b>eau.",
+    r: "Partitivo: du (masc.), de la (fem.), de l' (vocal), des (plural).",
+    v: [["manger", "comer"], ["boire", "beber"], ["le pain", "el pan"], ["le fromage", "el queso"], ["l'eau", "el agua"], ["le café", "el café"], ["la pomme", "la manzana"], ["le poulet", "el pollo"], ["aimer", "gustar / amar"], ["l'addition", "la cuenta"]],
+    s: [["J'aime le fromage.", "Me gusta el queso."], ["Nous mangeons du pain.", "Comemos pan."], ["Je voudrais un café, s'il vous plaît.", "Quisiera un café, por favor."], ["L'addition, s'il vous plaît.", "La cuenta, por favor."]],
+    q: [["Tu ___ le chocolat ?", "aimes", ["aime", "aimez"]], ["Je bois ___ eau.", "de l'", ["du", "de la"]], ["Vous ___ du poisson ?", "mangez", ["mangeons", "mange"]], ["Nous ___ au restaurant.", "mangeons", ["mangons", "mangez"]]] },
+
+  { id: 6, g: 1, t: "La ciudad y el verbo aller",
+    tip: "<b>Aller</b>: je vais, tu vas, il va, nous allons, vous allez, ils vont. <b>à + le = au</b> (au cinéma), <b>à la</b> plage, <b>à l'</b>école.",
+    r: "à + le = au. Aller: je vais, tu vas, il va, nous allons, vous allez, ils vont.",
+    v: [["la gare", "la estación de tren"], ["la rue", "la calle"], ["la boulangerie", "la panadería"], ["la plage", "la playa"], ["l'hôpital", "el hospital"], ["à gauche", "a la izquierda"], ["à droite", "a la derecha"], ["tout droit", "todo recto"], ["je vais", "voy"], ["on va", "vamos (informal)"]],
+    s: [["Je vais à la plage.", "Voy a la playa."], ["Où est la gare ?", "¿Dónde está la estación?"], ["Tournez à gauche.", "Gire a la izquierda."], ["Nous allons au cinéma.", "Vamos al cine."]],
+    q: [["Je vais ___ cinéma.", "au", ["à le", "à la"]], ["Ils ___ à Paris.", "vont", ["allent", "vais"]], ["Tu vas ___ école ?", "à l'", ["au", "à la"]], ["Nous ___ à la boulangerie.", "allons", ["allez", "vont"]]] },
+
+  { id: 7, g: 1, t: "Mi rutina y la hora",
+    tip: "Verbos pronominales: je <b>me</b> lève, tu <b>te</b> lèves, il <b>se</b> lève, nous <b>nous</b> levons, vous <b>vous</b> levez. La hora: <b>il est sept heures</b> (son las siete).",
+    r: "Me, te, se, nous, vous: el pronombre cambia con la persona.",
+    v: [["se lever", "levantarse"], ["se coucher", "acostarse"], ["se doucher", "ducharse"], ["le matin", "la mañana"], ["le soir", "la noche (tarde-noche)"], ["quelle heure est-il ?", "¿qué hora es?"], ["midi", "mediodía"], ["toujours", "siempre"], ["souvent", "a menudo"], ["d'abord", "primero"]],
+    s: [["Je me lève à sept heures.", "Me levanto a las siete."], ["Il est huit heures et demie.", "Son las ocho y media."], ["Elle se couche tard.", "Ella se acuesta tarde."], ["D'abord, je me douche.", "Primero, me ducho."]],
+    q: [["Je ___ lève tôt.", "me", ["se", "te"]], ["Nous ___ couchons à minuit.", "nous", ["se", "vous"]], ["Il est neuf ___.", "heures", ["heure", "ans"]], ["Tu ___ douches le soir ?", "te", ["se", "me"]]] },
+
+  { id: 8, g: 1, t: "Negar y preguntar",
+    tip: "La negación rodea al verbo: <b>ne</b> parle <b>pas</b>. También <b>ne… jamais</b> (nunca), <b>ne… plus</b> (ya no). Después de negación, <b>du/de la/un</b> pasan a <b>de / d'</b>.",
+    r: "Ne + verbo + pas. Tras negación: pas de / pas d'.",
+    v: [["ne pas", "no"], ["ne jamais", "nunca"], ["ne plus", "ya no"], ["rien", "nada"], ["pourquoi", "por qué"], ["parce que", "porque"], ["quand", "cuándo"], ["où", "dónde"], ["qui", "quién"], ["combien", "cuánto"]],
+    s: [["Je ne parle pas anglais.", "No hablo inglés."], ["Il ne mange jamais de viande.", "Él nunca come carne."], ["Est-ce que tu viens ?", "¿Vienes?"], ["Combien ça coûte ?", "¿Cuánto cuesta?"]],
+    q: [["Je ne fume ___.", "pas", ["non", "rien"]], ["Je n'ai pas ___ argent.", "d'", ["de l'", "du"]], ["___ est-ce que tu habites ?", "Où", ["Ou", "Qui"]], ["Elle ne travaille ___ ici, elle est partie.", "plus", ["jamais", "rien"]]] },
+
+  { id: 9, g: 1, t: "Describir con adjetivos",
+    tip: "El adjetivo concuerda: petit → <b>petite</b> → petits → <b>petites</b>. Algunos cambian más: beau → <b>belle</b>, vieux → <b>vieille</b>, blanc → <b>blanche</b>, gentil → <b>gentille</b>.",
+    r: "Femenino +e, plural +s. Ojo: beau/belle, vieux/vieille, gentil/gentille.",
+    v: [["grand", "grande / alto"], ["petite", "pequeña"], ["belle", "bonita"], ["nouveau", "nuevo"], ["heureuse", "feliz (ella)"], ["gentil", "amable"], ["vieille", "vieja"], ["cher", "caro"], ["intéressant", "interesante"], ["fatigué", "cansado"]],
+    s: [["Ma maison est petite.", "Mi casa es pequeña."], ["C'est une belle ville.", "Es una ciudad bonita."], ["Elles sont très heureuses.", "Ellas están muy felices."], ["J'ai une nouvelle voiture.", "Tengo un carro nuevo."]],
+    q: [["Elle est très ___.", "gentille", ["gentil", "gentils"]], ["Mes sœurs sont ___.", "fatiguées", ["fatigué", "fatigués"]], ["Une maison ___.", "blanche", ["blanc", "blanches"]], ["C'est une ___ idée.", "bonne", ["bon", "bons"]]] },
+
+  { id: 10, g: 1, t: "Lo que voy a hacer",
+    tip: "Futuro cercano = <b>aller + infinitivo</b>, igual que en español: <b>je vais voyager</b> (voy a viajar). El segundo verbo no se conjuga.",
+    r: "Aller conjugado + verbo en infinitivo: je vais regarder.",
+    v: [["demain", "mañana"], ["ce soir", "esta noche"], ["la semaine prochaine", "la próxima semana"], ["voyager", "viajar"], ["acheter", "comprar"], ["regarder", "mirar"], ["visiter", "visitar"], ["le week-end", "el fin de semana"], ["bientôt", "pronto"], ["faire", "hacer"]],
+    s: [["Je vais voyager en France.", "Voy a viajar a Francia."], ["Demain, nous allons visiter le musée.", "Mañana vamos a visitar el museo."], ["Qu'est-ce que tu vas faire ce soir ?", "¿Qué vas a hacer esta noche?"], ["Ils vont acheter une maison.", "Van a comprar una casa."]],
+    q: [["Je vais ___ un film.", "regarder", ["regarde", "regardé"]], ["Elle ___ partir demain.", "va", ["vais", "vont"]], ["Vous ___ dîner avec nous ?", "allez", ["allons", "vas"]], ["Nous allons ___ nos amis.", "voir", ["voyons", "vu"]]] },
+
+  { id: 11, g: 2, t: "El pasado con avoir",
+    tip: "Passé composé = <b>avoir + participio</b>: j'ai mangé, tu as fini, il a pris. Participios irregulares clave: <b>fait, vu, bu, pris, eu, été</b>.",
+    r: "Avoir conjugado + participio: j'ai mangé, nous avons vu.",
+    v: [["j'ai mangé", "comí"], ["j'ai fini", "terminé"], ["j'ai pris", "tomé"], ["j'ai fait", "hice"], ["j'ai vu", "vi"], ["j'ai bu", "bebí"], ["hier", "ayer"], ["la semaine dernière", "la semana pasada"], ["déjà", "ya"], ["il y a deux jours", "hace dos días"]],
+    s: [["Hier, j'ai mangé une pizza.", "Ayer comí una pizza."], ["Nous avons vu un bon film.", "Vimos una buena película."], ["Tu as fini tes devoirs ?", "¿Terminaste tus tareas?"], ["Ils ont pris le train.", "Tomaron el tren."]],
+    q: [["J'ai ___ mes clés.", "perdu", ["perdé", "perdi"]], ["Elle a ___ un gâteau.", "fait", ["faite", "fais"]], ["Nous ___ bu du vin.", "avons", ["sommes", "ont"]], ["Tu as ___ mon message ?", "vu", ["vois", "voi"]]] },
+
+  { id: 12, g: 2, t: "El pasado con être",
+    tip: "Los verbos de movimiento (aller, venir, partir, arriver, naître, rester, tomber…) usan <b>être</b>, y el participio concuerda: elle est allé<b>e</b>, nous sommes arrivé<b>s</b>.",
+    r: "Verbos de movimiento con être; el participio concuerda: elle est partie.",
+    v: [["je suis allé", "fui"], ["je suis venu", "vine"], ["je suis parti", "me fui"], ["je suis arrivé", "llegué"], ["je suis né", "nací"], ["je suis resté", "me quedé"], ["je suis tombé", "me caí"], ["elle est sortie", "ella salió"], ["nous sommes rentrés", "volvimos a casa"], ["il est mort", "murió"]],
+    s: [["Elle est allée au marché.", "Ella fue al mercado."], ["Je suis né à Santiago.", "Nací en Santiago."], ["Nous sommes arrivés en retard.", "Llegamos tarde."], ["Ils sont restés à la maison.", "Se quedaron en casa."]],
+    q: [["Elle est ___ hier.", "partie", ["parti", "partis"]], ["Nous ___ allés à la plage.", "sommes", ["avons", "sont"]], ["Marie et Julie sont ___.", "venues", ["venu", "venus"]], ["Il ___ tombé dans la rue.", "est", ["a", "ai"]]] },
+
+  { id: 13, g: 2, t: "Lo, la, le, les",
+    tip: "Complemento directo: <b>le, la, les</b> (lo, la, los). Indirecto, con «à»: <b>lui</b> (a él / a ella) y <b>leur</b> (a ellos). Van delante del verbo: je <b>la</b> connais.",
+    r: "Directo: le, la, les. Con «à alguien»: lui (singular), leur (plural).",
+    v: [["je le vois", "lo veo"], ["je la connais", "la conozco"], ["je les aime", "los quiero"], ["je lui parle", "le hablo"], ["je leur écris", "les escribo"], ["appeler", "llamar"], ["inviter", "invitar"], ["aider", "ayudar"], ["répondre", "responder"], ["donner", "dar"]],
+    s: [["Je la connais bien.", "La conozco bien."], ["Tu le vois demain ?", "¿Lo ves mañana?"], ["Je lui téléphone ce soir.", "Le llamo esta noche."], ["Nous les invitons.", "Los invitamos."]],
+    q: [["Tu connais Paul ? Oui, je ___ connais.", "le", ["lui", "la"]], ["J'écris à ma mère. Je ___ écris.", "lui", ["la", "leur"]], ["Tu aimes ces livres ? Oui, je ___ aime.", "les", ["leur", "lui"]], ["Je parle à mes amis. Je ___ parle.", "leur", ["les", "lui"]]] },
+
+  { id: 14, g: 2, t: "Cuando era pequeño",
+    tip: "El <b>imparfait</b> describe costumbres y escenas del pasado (como «jugaba», «hacía»). Se forma con la raíz de nous: nous jou-ons → je <b>jouais</b>. Excepción: être → <b>j'étais</b>.",
+    r: "Imparfait para costumbres y descripciones: je jouais, il faisait, j'étais.",
+    v: [["j'étais", "era / estaba"], ["j'avais", "tenía"], ["il faisait beau", "hacía buen tiempo"], ["quand j'étais petit", "cuando era pequeño"], ["d'habitude", "normalmente"], ["chaque été", "cada verano"], ["on jouait", "jugábamos"], ["il pleuvait", "llovía"], ["nous habitions", "vivíamos"], ["autrefois", "antes (antiguamente)"]],
+    s: [["Quand j'étais petit, je jouais au foot.", "Cuando era pequeño, jugaba fútbol."], ["Il faisait très chaud.", "Hacía mucho calor."], ["Nous habitions près de la mer.", "Vivíamos cerca del mar."], ["Chaque été, on allait chez ma grand-mère.", "Cada verano íbamos a casa de mi abuela."]],
+    q: [["Quand j'___ jeune, j'aimais danser.", "étais", ["ai été", "suis"]], ["Il ___ quand je suis sorti.", "pleuvait", ["a plu", "pleut"]], ["Avant, nous ___ souvent au parc.", "allions", ["allons", "irons"]], ["Avant, tu ___ les cheveux longs.", "avais", ["as eu", "avez"]]] },
+
+  { id: 15, g: 3, t: "Futuro y condicional",
+    tip: "<b>Futur simple</b>: infinitivo + -ai, -as, -a, -ons, -ez, -ont (je parlerai). Irregulares: <b>serai, aurai, irai, ferai, pourrai</b>. <b>Conditionnel</b> = misma raíz + -ais: je voudrais. «Si + imparfait» lleva condicional: si j'avais…, je voyagerais.",
+    r: "Si + imparfait → conditionnel. Quand + futur → futur.",
+    v: [["je serai", "seré"], ["j'aurai", "tendré"], ["j'irai", "iré"], ["je ferai", "haré"], ["je pourrai", "podré"], ["je voudrais", "quisiera"], ["j'aimerais", "me gustaría"], ["si j'avais", "si tuviera"], ["je serais", "sería"], ["l'année prochaine", "el próximo año"]],
+    s: [["L'année prochaine, j'irai au Canada.", "El próximo año iré a Canadá."], ["Si j'avais le temps, je voyagerais plus.", "Si tuviera tiempo, viajaría más."], ["J'aimerais apprendre le piano.", "Me gustaría aprender piano."], ["Nous ferons la fête samedi.", "Haremos la fiesta el sábado."]],
+    q: [["Demain, il ___ beau.", "fera", ["fait", "faisait"]], ["Si j'avais de l'argent, j'___ une maison.", "achèterais", ["achèterai", "achète"]], ["Quand tu ___ à Paris, appelle-moi.", "seras", ["es", "serais"]], ["L'année prochaine, nous ___ en Italie.", "irons", ["irez", "allerons"]]] },
+
+  { id: 16, g: 3, t: "Opinar y conectar ideas",
+    tip: "Tras <b>il faut que</b>, <b>je veux que</b> o <b>bien que</b> va el <b>subjuntivo</b>: que tu fasses, que vous soyez, qu'il vienne. Tras <b>je pense que</b> va indicativo. Conectores: <b>donc</b> (por lo tanto), <b>pourtant</b> (sin embargo).",
+    r: "Il faut que / je veux que / bien que + subjuntivo. Je pense que + indicativo.",
+    v: [["il faut que", "es necesario que"], ["je pense que", "creo que"], ["à mon avis", "en mi opinión"], ["pourtant", "sin embargo"], ["donc", "por lo tanto"], ["cependant", "no obstante"], ["bien que", "aunque"], ["afin de", "con el fin de"], ["d'ailleurs", "además / por cierto"], ["je ne pense pas que", "no creo que"]],
+    s: [["Il faut que tu viennes.", "Es necesario que vengas."], ["À mon avis, c'est une bonne idée.", "En mi opinión, es una buena idea."], ["Il pleut, pourtant il fait chaud.", "Llueve; sin embargo, hace calor."], ["Bien qu'il soit tard, je travaille.", "Aunque es tarde, trabajo."]],
+    q: [["Il faut que tu ___ tes devoirs.", "fasses", ["fais", "feras"]], ["Je veux que vous ___ à l'heure.", "soyez", ["êtes", "serez"]], ["Il est malade, ___ il reste à la maison.", "donc", ["pourtant", "bien que"]], ["Je pense qu'il ___ raison.", "a", ["ait", "avoir"]]] },
+];
+
+const ES = [
+  { id: 1, g: 0, t: "Mayúsculas y signos",
+    tip: "Preguntas y exclamaciones <b>abren y cierran</b>: ¿…? ¡…! Nombres propios y lugares van con mayúscula; <b>días, meses, idiomas y gentilicios van en minúscula</b>: lunes, enero, español, dominicanos.",
+    r: "¿? y ¡! siempre en pareja. Días, meses e idiomas en minúscula.",
+    w: [["¿Cómo", "Cómo", "___ estás?"], ["¡Qué", "Qué", "___ alegría verte!"], ["Santo Domingo", "santo domingo", "Vivo en ___."], ["lunes", "Lunes", "Nos vemos el ___."], ["enero", "Enero", "Mi cumpleaños es en ___."], ["español", "Español", "Hablo ___ y francés."], ["Juan", "juan", "Mi hermano se llama ___."], ["dominicanos", "Dominicanos", "Los ___ somos alegres."], ["¿Dónde", "Dónde", "___ queda el banco?"], ["Biblia", "biblia", "Leo la ___ cada mañana."]] },
+
+  { id: 2, g: 0, t: "B y V",
+    tip: "Pistas que no fallan: después de <b>m</b> va <b>b</b> (también, cambio); después de <b>n</b> va <b>v</b> (invierno, enviar). El copretérito <b>-aba</b> siempre con b (hablaba). Las terminaciones <b>-ble</b> y <b>-bilidad</b> van con b.",
+    r: "mb y nv. -aba con b. -ble con b.",
+    w: [["vaso", "baso", "Sírveme un ___ de agua."], ["bueno", "vueno", "El café está muy ___."], ["hablaba", "hablava", "Ella ___ por teléfono."], ["llevar", "llebar", "Tengo que ___ a mi hijo."], ["biblioteca", "viblioteca", "Estudio en la ___."], ["nuevo", "nuebo", "Compré un carro ___."], ["obvio", "ovbio", "Es ___ que vendrá."], ["vivir", "bivir", "Quiero ___ cerca del mar."], ["amable", "amavle", "Es una persona muy ___."], ["invierno", "imbierno", "En ___ hace frío."]] },
+
+  { id: 3, g: 0, t: "La H",
+    tip: "La h no suena, por eso se olvida. Llevan h las palabras que empiezan por <b>hie-, hue-, hui-</b> (hielo, huevo, huir) y las formas de <b>haber</b> y <b>hacer</b>. Ojo con <b>ola</b> (del mar) y <b>hola</b> (saludo).",
+    r: "hie-, hue-, hui- llevan h. Hacer y haber siempre con h.",
+    w: [["hoy", "oy", "___ es lunes."], ["hacer", "acer", "Voy a ___ la tarea."], ["hielo", "yelo", "Ponle ___ al jugo."], ["ahora", "aora", "Ven ___ mismo."], ["huevo", "güevo", "Desayuné un ___ frito."], ["hermano", "ermano", "Mi ___ toca guitarra."], ["almohada", "almoada", "Necesito otra ___."], ["zanahoria", "zanaoria", "La ___ es naranja."], ["ola", "hola", "Una ___ gigante llegó a la playa."], ["hola", "ola", "___, ¿qué tal?"]] },
+
+  { id: 4, g: 0, t: "G y J",
+    tip: "Con e/i la g y la j suenan igual. Van con <b>j</b>: el pretérito de decir y traer (<b>dije, traje</b>) y las palabras en <b>-aje</b> (viaje). Van con <b>g</b>: los verbos en <b>-ger, -gir</b> (elegir) y <b>gen-</b> (gente). Para que suene la u en güe/güi se usa diéresis: pingüino.",
+    r: "-aje con j; -ger/-gir con g; dije y traje con j.",
+    w: [["gente", "jente", "Había mucha ___."], ["mujer", "muger", "Esa ___ es doctora."], ["viaje", "viage", "El ___ fue largo."], ["dije", "dige", "Ya te lo ___."], ["imagen", "imajen", "La ___ está borrosa."], ["general", "jeneral", "En ___, me gusta."], ["traje", "trage", "Me puse un ___ azul."], ["tejer", "teger", "Mi abuela sabe ___."], ["elegir", "elejir", "Es difícil ___."], ["pingüino", "pinguino", "El ___ vive en el frío."]] },
+
+  { id: 5, g: 0, t: "LL e Y",
+    tip: "En el Caribe suenan casi igual. Van con <b>ll</b> las terminaciones <b>-illo, -illa</b> (silla) y <b>-alle, -elle</b> (calle). Va con <b>y</b> la palabra que termina en sonido «i» tras vocal (rey, hoy) y formas de verbos sin ll en el infinitivo (cayó, de caer).",
+    r: "-illo/-illa con ll. Final «i» tras vocal se escribe y: rey.",
+    w: [["llave", "yave", "Perdí la ___ de la casa."], ["playa", "plalla", "Vamos a la ___."], ["calle", "caye", "Vivo en esta ___."], ["yo", "llo", "___ soy de Santiago."], ["ayer", "aller", "___ llovió mucho."], ["caballo", "cabayo", "El ___ corre rápido."], ["rey", "rei", "El ___ y la reina."], ["lluvia", "yuvia", "Me encanta la ___."], ["joya", "jolla", "Esa ___ es de oro."], ["silla", "siya", "Siéntate en la ___."]] },
+
+  { id: 6, g: 0, t: "C, S y Z",
+    tip: "Con el seseo, c, s y z suenan igual. Regla útil: la <b>z cambia a c</b> delante de e/i (lápiz → lápi<b>c</b>es, vez → ve<b>c</b>es). Los verbos en <b>-cer, -cir</b> se escriben con c (conocer). Si dudas, busca la familia: cabeza → cabezón.",
+    r: "z → c delante de e/i: lápices, veces. -cer y -cir con c.",
+    w: [["zapato", "sapato", "Me duele el ___."], ["cielo", "sielo", "El ___ está azul."], ["cocinar", "cosinar", "Me gusta ___."], ["lápices", "lápizes", "Compré tres ___."], ["feliz", "felis", "Estoy muy ___."], ["veces", "vezes", "Lo intenté muchas ___."], ["cereza", "seresa", "Una ___ roja."], ["sencillo", "cencillo", "Es un ejercicio ___."], ["conocer", "conoser", "Quiero ___ París."], ["cabeza", "cabesa", "Me duele la ___."]] },
+
+  { id: 7, g: 1, t: "Agudas, llanas y esdrújulas",
+    tip: "<b>Agudas</b> (fuerza al final) llevan tilde si terminan en <b>n, s o vocal</b>: canción, café. <b>Llanas</b> (penúltima) llevan tilde si <b>no</b> terminan en n, s o vocal: árbol, lápiz. <b>Esdrújulas</b>, siempre: música, teléfono.",
+    r: "Aguda: tilde si acaba en n, s o vocal. Llana: al revés. Esdrújula: siempre.",
+    w: [["canción", "cancion", "Esa ___ es preciosa."], ["árbol", "arbol", "El ___ da sombra."], ["música", "musica", "Me encanta la ___."], ["examen", "exámen", "Mañana tengo ___."], ["café", "cafe", "Un ___ con leche."], ["lápiz", "lapiz", "Préstame un ___."], ["teléfono", "telefono", "Contesta el ___."], ["joven", "jóven", "Es un hombre ___."], ["rápido", "rapido", "Corre muy ___."], ["virus", "vírus", "El ___ se propagó."], ["exámenes", "examenes", "Los ___ fueron difíciles."], ["reloj", "relój", "Mi ___ se paró."]] },
+
+  { id: 8, g: 1, t: "Tilde diacrítica",
+    tip: "Las palabras de una sílaba no llevan tilde, salvo para distinguir significados: <b>tú</b> (persona) / tu (posesivo), <b>él</b> / el, <b>más</b> (cantidad) / mas (pero), <b>sí</b> (afirmación) / si (condición), <b>mí</b> / mi, <b>té</b> (bebida) / te, <b>sé</b> (saber) / se.",
+    r: "Tú, él, mí, sí, más, té, sé: con tilde cuando son pronombre, afirmación, cantidad o verbo.",
+    w: [["tú", "tu", "¿___ vienes a la fiesta?"], ["tu", "tú", "¿Dónde está ___ carro?"], ["él", "el", "___ es mi amigo."], ["el", "él", "Abre ___ libro."], ["más", "mas", "Quiero ___ arroz."], ["sí", "si", "Le dije que ___."], ["si", "sí", "___ llueve, no salgo."], ["mí", "mi", "Esto es para ___."], ["té", "te", "Me tomé un ___ de jengibre."], ["sé", "se", "No ___ la respuesta."]] },
+
+  { id: 9, g: 1, t: "Por qué, porque, porqué",
+    tip: "<b>¿Por qué?</b> pregunta (directa o indirecta: no sé por qué). <b>Porque</b> responde o explica la causa. <b>El porqué</b> es un sustantivo (= el motivo). <b>Por que</b> = por el cual / por la que.",
+    r: "Por qué pregunta, porque responde, el porqué es el motivo.",
+    w: [["por qué", "porque", "¿___ llegaste tarde?"], ["porque", "por qué", "Llegué tarde ___ había tapón."], ["porqué", "por qué", "No entiendo el ___ de su decisión."], ["por qué", "porque", "No sé ___ se fue."], ["porque", "porqué", "Estudio ___ quiero aprender."], ["por qué", "porqué", "¿___ no me llamaste?"], ["porqué", "porque", "Explícame el ___ de todo."], ["por que", "porque", "Esa es la razón ___ me fui."], ["porque", "por qué", "Me voy ___ ya es tarde."], ["por qué", "porque", "¿Sabes ___ cerraron?"]] },
+
+  { id: 10, g: 1, t: "Haber, a ver, hay, ahí, hecho",
+    tip: "<b>A ver</b> = mirar o comprobar (vamos a ver). <b>Haber</b> es verbo (debe haber). <b>Hay</b> = existe; <b>ahí</b> = lugar; <b>¡ay!</b> = queja. <b>Hecho</b> viene de hacer; <b>echo</b> viene de echar.",
+    r: "A ver = mirar. Haber = verbo. Hay existe, ahí lugar, ay dolor. Hecho de hacer, echo de echar.",
+    w: [["a ver", "haber", "Vamos ___ la película."], ["haber", "a ver", "Debe ___ un error."], ["hay", "ahí", "No ___ leche en la nevera."], ["ahí", "hay", "Pon la caja ___."], ["ay", "hay", "¡___, qué dolor!"], ["hecho", "echo", "Ya he ___ la tarea."], ["echo", "hecho", "Siempre le ___ sal al arroz."], ["a ver", "haber", "___ si mañana nos vemos."], ["haber", "a ver", "Podría ___ más gente."], ["hecho", "echo", "Es un ___ histórico."]] },
+
+  { id: 11, g: 2, t: "Hiatos y diptongos",
+    tip: "Cuando la <b>i</b> o la <b>u</b> suenan fuertes junto a otra vocal, se rompe el diptongo y <b>llevan tilde siempre</b>: día, país, baúl. Los monosílabos como <b>fui, fue, dio, vio</b> y la palabra <b>guion</b> no llevan tilde.",
+    r: "í/ú tónicas junto a a, e, o llevan tilde siempre: día, país. Fui, dio y guion, sin tilde.",
+    w: [["día", "dia", "Hoy es un buen ___."], ["país", "pais", "Mi ___ es hermoso."], ["baúl", "baul", "Guarda la ropa en el ___."], ["río", "rio", "El ___ está crecido."], ["maíz", "maiz", "Me gusta el ___ asado."], ["oído", "oido", "Me duele el ___."], ["Raúl", "Raul", "___ es mi primo."], ["policía", "policia", "Llama a la ___."], ["fui", "fuí", "Ayer ___ al banco."], ["guion", "guión", "Escribí el ___ del video."], ["huir", "huír", "Quiso ___ del peligro."], ["heroína", "heroina", "Ella es una ___."]] },
+
+  { id: 12, g: 2, t: "Qué, cuándo, dónde, cómo",
+    tip: "Llevan tilde cuando <b>preguntan o exclaman</b>, aunque no haya signos: «no sé <b>qué</b> quieres», «pregúntale <b>dónde</b> vive». Sin tilde cuando <b>conectan</b>: «dijo que vendría», «la casa donde nací».",
+    r: "Si pregunta o exclama, lleva tilde (aunque no tenga ¿?).",
+    w: [["qué", "que", "No sé ___ quieres."], ["que", "qué", "Dijo ___ vendría."], ["cuándo", "cuando", "¿___ es tu cumpleaños?"], ["cuando", "cuándo", "Llámame ___ llegues."], ["dónde", "donde", "Pregúntale ___ vive."], ["donde", "dónde", "Esta es la casa ___ nací."], ["cómo", "como", "No entiendo ___ funciona."], ["como", "cómo", "Hazlo ___ te enseñé."], ["quién", "quien", "¿___ llamó?"], ["cuánto", "cuanto", "¡___ te quiero!"]] },
+
+  { id: 13, g: 2, t: "X y las terminaciones -ción, -sión",
+    tip: "Se escriben con <b>x</b> las palabras con <b>ex-</b> (fuera de, excelente) y <b>extra-</b>. Truco para -ción / -sión: si existe una palabra de la familia con <b>-to, -tor, -do</b>, va <b>-ción</b> (atento → atención); si tiene <b>-so, -sor, -sivo</b>, va <b>-sión</b> (confuso → confusión).",
+    r: "-to/-tor → -ción. -so/-sor/-sivo → -sión.",
+    w: [["examen", "ecsamen", "Aprobé el ___."], ["explicar", "esplicar", "Te lo voy a ___."], ["extranjero", "estranjero", "Viajó al ___."], ["acción", "acsión", "Es una película de ___."], ["televisión", "televición", "Apaga la ___."], ["decisión", "decición", "Fue una buena ___."], ["atención", "atensión", "Presta ___."], ["dirección", "direción", "¿Cuál es tu ___?"], ["excelente", "ecselente", "¡Trabajo ___!"], ["confusión", "confución", "Hubo una ___."], ["estrategia", "extrategia", "Necesitamos una ___ digital."]] },
+
+  { id: 14, g: 2, t: "Homófonos",
+    tip: "Suenan igual y significan distinto. <b>Valla</b> (cerca) / <b>vaya</b> (de ir, o sorpresa). <b>Tuvo</b> (tener) / <b>tubo</b> (cilindro). <b>Cayó</b> (caer) / <b>calló</b> (callar). <b>Votar</b> (elecciones) / <b>botar</b> (tirar). <b>Cien</b> (100) / <b>sien</b> (cabeza).",
+    r: "Piensa de qué palabra viene: tener → tuvo, caer → cayó, callar → calló.",
+    w: [["valla", "vaya", "Saltó la ___ del patio."], ["vaya", "valla", "¡___ sorpresa!"], ["tuvo", "tubo", "Ella ___ un bebé."], ["tubo", "tuvo", "Se rompió el ___ del agua."], ["calló", "cayó", "Cuando entré, todo el mundo se ___."], ["cayó", "calló", "La lluvia ___ toda la noche."], ["votar", "botar", "Mañana vamos a ___ en las elecciones."], ["botar", "votar", "No hay que ___ basura en la calle."], ["cien", "sien", "Tengo ___ pesos."], ["sien", "cien", "Me duele la ___."], ["haya", "halla", "Espero que ___ comida."]] },
+];
+
+/* Prueba de nivel: g = grupo de nivel; se avanza grupo a grupo y se para al fallar uno. */
+const PLACE_FR = [
+  { g: 0, q: "¿Cómo se dice «gracias» en francés?", ok: "merci", no: ["bonjour", "pardon"] },
+  { g: 0, q: "Je ___ dominicain.", ok: "suis", no: ["es", "ai"] },
+  { g: 0, q: "¿Qué significa «au revoir»?", ok: "adiós", no: ["buenos días", "por favor"] },
+  { g: 1, q: "Nous ___ du pain.", ok: "mangeons", no: ["mangez", "mange"] },
+  { g: 1, q: "Je vais ___ cinéma.", ok: "au", no: ["à le", "en"] },
+  { g: 1, q: "Je ne parle ___ anglais.", ok: "pas", no: ["non", "rien"] },
+  { g: 2, q: "Hier, j'___ un film.", ok: "ai vu", no: ["vois", "verrai"] },
+  { g: 2, q: "Elle est ___ à Paris la semaine dernière.", ok: "allée", no: ["allé", "aller"] },
+  { g: 2, q: "Quand j'étais petit, je ___ au foot tous les jours.", ok: "jouais", no: ["ai joué", "jouerai"] },
+  { g: 3, q: "Si j'avais le temps, je ___ plus.", ok: "voyagerais", no: ["voyagerai", "voyage"] },
+  { g: 3, q: "Il faut que tu ___ avec nous.", ok: "viennes", no: ["viens", "viendras"] },
+  { g: 3, q: "Il pleut, ___ il fait chaud.", ok: "pourtant", no: ["donc", "parce que"] },
+];
+
+const PLACE_ES = [
+  { g: 0, q: "Sírveme un ___ de agua.", ok: "vaso", no: ["baso", "bazo"] },
+  { g: 0, q: "___ es lunes.", ok: "Hoy", no: ["Oy", "Hoi"] },
+  { g: 0, q: "Había mucha ___ en el concierto.", ok: "gente", no: ["jente"] },
+  { g: 0, q: "Me duele el ___ nuevo.", ok: "zapato", no: ["sapato", "zapatto"] },
+  { g: 1, q: "Mañana tengo ___ de inglés.", ok: "examen", no: ["exámen"] },
+  { g: 1, q: "¿___ vienes a la fiesta?", ok: "Tú", no: ["Tu"] },
+  { g: 1, q: "¿___ llegaste tarde?", ok: "Por qué", no: ["Porque", "Porqué"] },
+  { g: 1, q: "Ya he ___ la tarea.", ok: "hecho", no: ["echo"] },
+  { g: 2, q: "Mi ___ es hermoso.", ok: "país", no: ["pais"] },
+  { g: 2, q: "Pregúntale ___ vive.", ok: "dónde", no: ["donde"] },
+  { g: 2, q: "Escribí el ___ del video.", ok: "guion", no: ["guión"] },
+  { g: 2, q: "La lluvia ___ toda la noche.", ok: "cayó", no: ["calló"] },
+];
+
+</script>
+<script>
+/* Cahier — motor de la app. Depende de contenido.js (FR, ES, PLACE_FR, PLACE_ES). */
+(() => {
+"use strict";
+
+/* ---------- utilidades ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k === "html") el.innerHTML = v;
+    else if (k === "style") el.style.cssText = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+const shuffle = (a) => { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
+const uniq = (a) => [...new Set(a)];
+const fmtDate = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const today = () => fmtDate(new Date());
+const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return fmtDate(d); };
+const stripTilde = (s) => s.normalize("NFD").replace(/́/g, "").normalize("NFC");
+const noAcc = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/œ/g, "oe");
+const normFr = (s) => s.toLowerCase().replace(/[’`]/g, "'").replace(/[.,!?;:¿¡«»"]/g, " ").replace(/\s+/g, " ").trim();
+const normEs = (s) => s.toLowerCase().replace(/\s+/g, " ").trim();
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const atStart = (pre) => /^[¿¡]?$/.test(pre);
+/* Rellena el hueco y pone mayúscula si la palabra abre la frase */
+function fillWord(ctx, word) { const pre = ctx.split("___")[0]; return atStart(pre) ? cap(word) : word; }
+function fill(ctx, word) { return ctx.replace("___", fillWord(ctx, word)); }
+
+const ICON = {
+  flame: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c1 3.5 5 5.6 5 10.4A5 5 0 0 1 12 22a5 5 0 0 1-5-5c0-2.5 1.4-3.9 2.5-5 .3 1.6 1.1 2.6 2 3 0-3.6-.7-6.6.5-13Z" fill="currentColor"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" fill="currentColor"/></svg>',
+  star: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.5 2.9 6 6.6.8-4.9 4.5 1.3 6.5L12 17l-5.9 3.3 1.3-6.5L2.5 9.3l6.6-.8 2.9-6Z" fill="currentColor"/></svg>',
+  speaker: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4V9Z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  turtle: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15c0-4 3.5-7 8-7s8 3 8 7H4Z" fill="currentColor"/><circle cx="21" cy="13" r="1.8" fill="currentColor"/><path d="M6 15v3M18 15v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+  back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  timer: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M12 9v4l2.5 2M9 2h6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>',
+  book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 19a2 2 0 0 1 2-2h13" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+};
+const icon = (n, cls = "ic") => h("span", { class: cls, html: ICON[n] });
+
+/* ---------- estado ---------- */
+const KEY = "cahier.v1";
+const blankPanel = () => ({ placed: false, lvl: 0, start: 1, initial: null, plan: [], done: {}, srs: {}, session: 0, final: null, best: 0 });
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.panels && s.panels.fr && s.panels.es) return s; } catch (e) { /* sin almacenamiento */ }
+  return { name: "", goal: 60, sound: true, streak: 0, last: null, xp: 0, xpDay: {}, panels: { fr: blankPanel(), es: blankPanel() } };
+}
+let S = load();
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } }
+
+const P = {
+  fr: { key: "fr", name: "Francés", sub: "De cero a conversar en 30 días", units: FR, place: PLACE_FR,
+        levels: [{ n: "A0 · Principiante", start: 1 }, { n: "A1 · Básico", start: 5 }, { n: "A2 · Elemental", start: 11 }, { n: "B1 · Intermedio", start: 15 }],
+        group: 3, need: 2, lang: "fr-FR", gname: ["A0", "A1", "A2", "B1"] },
+  es: { key: "es", name: "Ortografía", sub: "Escribe sin dudas en 30 días", units: ES, place: PLACE_ES,
+        levels: [{ n: "Básico", start: 1 }, { n: "Intermedio", start: 7 }, { n: "Avanzado", start: 11 }],
+        group: 4, need: 3, lang: "es-ES", gname: ["Básico", "Intermedio", "Avanzado"] },
+};
+const unit = (pk, id) => P[pk].units.find((u) => u.id === id);
+
+/* ---------- audio: voz y efectos ---------- */
+const TTS = typeof window.speechSynthesis !== "undefined" && typeof window.SpeechSynthesisUtterance !== "undefined";
+let voices = [];
+function loadVoices() { try { voices = speechSynthesis.getVoices() || []; } catch (e) { voices = []; } }
+if (TTS) { loadVoices(); try { speechSynthesis.onvoiceschanged = loadVoices; } catch (e) { /* nada */ } }
+function speak(text, lang, slow) {
+  if (!TTS) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    const base = lang.slice(0, 2);
+    const v = voices.find((x) => x.lang === lang) || voices.find((x) => (x.lang || "").startsWith(base));
+    if (v) u.voice = v;
+    u.rate = slow ? 0.6 : base === "fr" ? 0.88 : 0.95;
+    speechSynthesis.speak(u);
+  } catch (e) { /* sin voz */ }
+}
+let actx = null;
+function beep(ok) {
+  if (!S.sound) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const notes = ok ? [660, 880] : [220, 180];
+    notes.forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = ok ? "triangle" : "sawtooth"; o.frequency.value = f;
+      const t = actx.currentTime + i * 0.09;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(ok ? 0.12 : 0.05, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.18);
+    });
+  } catch (e) { /* sin audio */ }
+}
+
+/* ---------- XP y racha ---------- */
+function addXp(n) {
+  S.xp += n; const d = today(); S.xpDay[d] = (S.xpDay[d] || 0) + n;
+  if (S.last !== d) { S.streak = S.last === yesterday() ? S.streak + 1 : 1; S.last = d; }
+  save();
+}
+const xpToday = () => S.xpDay[today()] || 0;
+const streakNow = () => (S.last === today() || S.last === yesterday() ? S.streak : 0);
+
+/* ---------- plan de 30 días ---------- */
+const REVIEW_DAYS = [6, 13, 20];
+const FINAL_DAY = 29;
+function buildPlan(pk, start) {
+  const units = P[pk].units;
+  const primary = units.filter((u) => u.id >= start), before = units.filter((u) => u.id < start);
+  const q = [];
+  primary.forEach((u) => { q.push({ k: "learn", u: u.id }, { k: "practice", u: u.id }); });
+  before.forEach((u) => q.push({ k: "boost", u: u.id }));
+  const plan = [];
+  for (let d = 0; d < 30; d++) {
+    if (d === FINAL_DAY) plan.push({ k: "final" });
+    else if (REVIEW_DAYS.includes(d)) plan.push({ k: "review" });
+    else plan.push(q.shift() || { k: "mix" });
+  }
+  return plan;
+}
+const KIND = {
+  learn: { label: "Aprende", desc: "Lección nueva con explicación y minijuegos." },
+  practice: { label: "Practica", desc: "Más ejercicios de producción para fijar lo aprendido." },
+  boost: { label: "Refuerzo", desc: "Repaso rápido de una base que conviene asegurar." },
+  review: { label: "Repaso semanal", desc: "Mezcla de todo lo de la semana, con prioridad a tus errores." },
+  mix: { label: "Repaso mixto", desc: "Práctica libre de todas las unidades estudiadas." },
+  final: { label: "Examen final", desc: "La misma prueba del inicio para medir cuánto avanzaste." },
+};
+const dayTitle = (pk, e) => (e.u ? KIND[e.k].label + ": " + unit(pk, e.u).t : KIND[e.k].label);
+const currentDay = (pp) => { for (let i = 0; i < 30; i++) if (!pp.done[i]) return i; return 30; };
+function studiedUnits(pk) {
+  const pp = S.panels[pk];
+  const ids = uniq(pp.plan.filter((e, i) => e.u && pp.done[i]).map((e) => e.u));
+  return ids.length ? ids : [pp.start];
+}
+
+/* ---------- repetición espaciada (cajas de Leitner) ---------- */
+const GAPS = [1, 2, 4, 7, 12];
+function srsMark(pk, ref, ok) {
+  if (!ref) return;
+  const pp = S.panels[pk], key = ref.u + "." + ref.k + "." + ref.i;
+  const cur = pp.srs[key];
+  if (!ok) pp.srs[key] = { b: 0, due: pp.session + 1 };
+  else if (cur) { const b = Math.min(cur.b + 1, GAPS.length - 1); pp.srs[key] = { b, due: pp.session + GAPS[b] }; }
+  else pp.srs[key] = { b: 1, due: pp.session + GAPS[1] };
+}
+function dueRefs(pk, n, excludeUnit) {
+  const pp = S.panels[pk];
+  return Object.entries(pp.srs)
+    .filter(([, v]) => v.due <= pp.session)
+    .sort((a, b) => a[1].b - b[1].b || a[1].due - b[1].due)
+    .map(([k]) => { const [u, kk, i] = k.split("."); return { u: +u, k: kk, i: +i }; })
+    .filter((r) => r.u !== excludeUnit && unit(pk, r.u))
+    .slice(0, n);
+}
+const weakCount = (pk) => Object.values(S.panels[pk].srs).filter((v) => v.b === 0).length;
+
+/* ---------- generadores de ejercicios ---------- */
+const data = (pk, ref) => unit(pk, ref.u)[ref.k][ref.i];
+const refs = (u, k) => u[k].map((_, i) => ({ u: u.id, k, i }));
+
+function frDistract(pk, ref, side, n) {
+  const u = unit(pk, ref.u), mine = data(pk, ref)[side];
+  let pool = uniq(u.v.map((x) => x[side]).filter((x) => x !== mine));
+  if (pool.length < n) pool = uniq(pool.concat(P[pk].units.flatMap((x) => x.v.map((y) => y[side])).filter((x) => x !== mine)));
+  return shuffle(pool).slice(0, n);
+}
+const MK = {
+  /* Francés */
+  esfr(pk, ref) { const [fr, es] = data(pk, ref); return { type: "mc", ref, title: "¿Cómo se dice en francés?", prompt: es, opts: shuffle([fr, ...frDistract(pk, ref, 0, 3)]), ok: fr, speakOk: fr, note: es }; },
+  fres(pk, ref) { const [fr, es] = data(pk, ref); return { type: "mc", ref, title: "¿Qué significa?", prompt: fr, promptSpeak: fr, opts: shuffle([es, ...frDistract(pk, ref, 1, 3)]), ok: es, speakOk: fr, note: fr + " = " + es }; },
+  listen(pk, ref) { if (!TTS) return null; const [fr, es] = data(pk, ref); return { type: "mc", ref, title: "Escucha y elige lo que oíste", audio: fr, opts: shuffle([fr, ...frDistract(pk, ref, 0, 3)]), ok: fr, speakOk: fr, note: fr + " = " + es }; },
+  write(pk, ref) { const [fr, es] = data(pk, ref); return { type: "write", ref, title: "Escríbelo en francés", prompt: es, ok: fr, lang: "fr", speakOk: fr, note: es }; },
+  order(pk, ref) {
+    const [fr, es] = data(pk, ref), u = unit(pk, ref.u);
+    const toks = fr.split(" ");
+    const extra = shuffle(uniq(u.s.filter((s) => s[0] !== fr).flatMap((s) => s[0].split(" ")).filter((t) => !toks.includes(t) && /\p{L}/u.test(t)))).slice(0, 2);
+    return { type: "order", ref, title: "Ordena la frase en francés", prompt: es, bank: shuffle([...toks, ...extra]), ok: fr, speakOk: fr, note: es };
+  },
+  listenorder(pk, ref) { if (!TTS) return null; const ex = MK.order(pk, ref); return { ...ex, title: "Escucha y ordena lo que oíste", prompt: null, audio: ex.ok }; },
+  cloze(pk, ref) { const [q, ok, no] = data(pk, ref); return { type: "mc", ref, title: "Completa la frase", sentence: q, opts: shuffle([ok, ...no]), ok, speakOk: q.replace("___", ok), note: unit(pk, ref.u).r }; },
+  pairs(pk, rs) { return { type: "pairs", refs: rs, title: "Une cada palabra con su traducción", items: rs.map((r) => data(pk, r)) }; },
+  /* Ortografía */
+  ctx(pk, ref) { const [ok, bad, ctx] = data(pk, ref); return { type: "mc", ref, title: "Elige la forma correcta", sentence: ctx, opts: shuffle([ok, ...bad.split("|")]).map((o) => fillWord(ctx, o)), ok: fillWord(ctx, ok), note: unit(pk, ref.u).r, full: fill(ctx, ok) }; },
+  letter(pk, ref) {
+    const [ok0, bad0, ctx] = data(pk, ref); const ok = fillWord(ctx, ok0), bad = fillWord(ctx, bad0.split("|")[0]);
+    let a = 0; while (a < ok.length && a < bad.length && ok[a] === bad[a]) a++;
+    let b = 0; while (b < ok.length - a && b < bad.length - a && ok[ok.length - 1 - b] === bad[bad.length - 1 - b]) b++;
+    const so = ok.slice(a, ok.length - b), sb = bad.slice(a, bad.length - b);
+    if (so.length > 3 || sb.length > 3 || so.includes(" ") || sb.includes(" ") || (a + b) === 0) return null;
+    return { type: "letter", ref, title: "¿Qué falta?", pre: ok.slice(0, a), post: ok.slice(ok.length - b), opts: shuffle([so, sb]), ok: so, word: ok, sentence: ctx, note: unit(pk, ref.u).r, full: fill(ctx, ok0) };
+  },
+  hunt(pk, ref) { const [ok, bad, ctx] = data(pk, ref); return { type: "hunt", ref, title: "Caza el error: toca la palabra mal escrita", ctx, okW: fillWord(ctx, ok), badW: fillWord(ctx, bad.split("|")[0]), note: unit(pk, ref.u).r, full: fill(ctx, ok) }; },
+  dictation(pk, ref) {
+    if (!TTS) return null;
+    const [ok, bad, ctx] = data(pk, ref);
+    if (/[¿¡]/.test(ok) || ok.toLowerCase() === bad.toLowerCase()) return null;
+    return { type: "write", ref, title: "Dictado: escribe la palabra que falta", sentence: ctx, audio: fill(ctx, ok), ok: fillWord(ctx, ok), lang: "es", note: unit(pk, ref.u).r, full: fill(ctx, ok) };
+  },
+  tilde(pk, ref) {
+    const [ok0, bad0, ctx] = data(pk, ref); const ok = fillWord(ctx, ok0), bad = fillWord(ctx, bad0.split("|")[0]);
+    if (ok.includes(" ") || stripTilde(ok) !== stripTilde(bad) || ok === bad) return null;
+    const chars = [...ok]; const base = chars.map(stripTilde);
+    const target = chars.findIndex((c, i) => c !== base[i]);
+    return { type: "tilde", ref, title: "¿Dónde va la tilde?", base, target, word: ok, sentence: ctx, note: unit(pk, ref.u).r, full: fill(ctx, ok0) };
+  },
+};
+const POOL = { v: ["esfr", "fres", "listen", "write"], s: ["order", "listenorder"], q: ["cloze"], w: ["ctx", "letter", "hunt", "dictation", "tilde"] };
+function make(pk, ref, prefs) {
+  const list = (prefs || shuffle(POOL[ref.k])).concat(shuffle(POOL[ref.k]));
+  for (const t of list) { const ex = MK[t](pk, ref); if (ex) { ex.mk = t; return ex; } }
+  return null;
+}
+
+function buildLesson(pk, entry) {
+  const out = [];
+  const add = (ref, prefs) => { if (!ref) return; const ex = make(pk, ref, prefs); if (ex) out.push(ex); };
+  const u = entry.u ? unit(pk, entry.u) : null;
+  if (u && pk === "fr") {
+    const v = shuffle(refs(u, "v")), s = shuffle(refs(u, "s")), q = shuffle(refs(u, "q"));
+    if (entry.k === "practice") {
+      add(v[0], ["write"]); add(s[0], ["order"]); add(q[0]); add(v[1], ["write"]); add(s[1], ["listenorder", "order"]);
+      out.push(MK.pairs(pk, v.slice(5, 10))); add(q[1]); add(v[2], ["listen", "fres"]); add(s[2], ["order"]);
+      add(v[3], ["write"]); add(q[2]); add(s[3], ["listenorder", "order"]); add(v[4], ["fres"]);
+    } else {
+      add(v[0], ["esfr"]); add(v[1], ["esfr"]); add(v[2], ["listen", "fres"]); out.push(MK.pairs(pk, v.slice(0, 5)));
+      add(q[0]); add(v[3], ["fres"]); add(s[0], ["order"]); add(v[4], ["listen", "esfr"]);
+      if (entry.k === "learn") { add(q[1]); add(v[5], ["write"]); add(s[1], ["order"]); add(v[6], ["esfr"]); }
+    }
+  } else if (u) {
+    const w = shuffle(refs(u, "w"));
+    if (entry.k === "practice") {
+      [["dictation", "hunt"], ["hunt"], ["tilde", "letter", "ctx"], ["dictation", "ctx"], ["hunt"], ["letter", "ctx"], ["dictation", "hunt"], ["ctx"], ["tilde", "hunt"], ["dictation", "letter"], ["hunt"]]
+        .forEach((p, i) => add(w[i % w.length], p));
+    } else {
+      const seq = [["ctx"], ["letter", "ctx"], ["tilde", "ctx"], ["hunt"], ["ctx"], ["dictation", "letter"], ["letter", "hunt"], ["hunt"]];
+      if (entry.k === "learn") seq.push(["tilde", "ctx"], ["dictation", "hunt"]);
+      seq.forEach((p, i) => add(w[i % w.length], p));
+    }
+  }
+  /* repaso espaciado de unidades anteriores */
+  const nReview = u ? (entry.k === "practice" ? 4 : 3) : 12;
+  const due = dueRefs(pk, nReview, u ? u.id : -1);
+  due.forEach((r) => add(r));
+  if (!u) {
+    const pool = studiedUnits(pk).map((id) => unit(pk, id)).flatMap((x) => pk === "fr" ? [...refs(x, "v"), ...refs(x, "s"), ...refs(x, "q")] : refs(x, "w"));
+    shuffle(pool).slice(0, Math.max(0, 12 - out.length)).forEach((r) => add(r));
+    if (pk === "fr") { const vv = shuffle(pool.filter((r) => r.k === "v")).slice(0, 5); if (vv.length >= 4) out.splice(4, 0, MK.pairs(pk, vv)); }
+  }
+  return out;
+}
+
+/* ---------- navegación ---------- */
+const app = () => $("#app");
+let cleanup = null;
+function screen(node, cls) {
+  if (cleanup) { cleanup(); cleanup = null; }
+  if (TTS) try { speechSynthesis.cancel(); } catch (e) { /* nada */ }
+  const root = app(); root.className = "app " + (cls || ""); root.replaceChildren(node);
+  window.scrollTo(0, 0);
+  const f = root.querySelector("[data-autofocus]"); if (f) setTimeout(() => f.focus(), 30);
+}
+function toast(msg) {
+  const t = h("div", { class: "toast", role: "status" }, msg); document.body.append(t);
+  setTimeout(() => t.classList.add("out"), 1900); setTimeout(() => t.remove(), 2300);
+}
+
+/* ---------- bienvenida ---------- */
+function Welcome() {
+  let goal = S.goal || 60;
+  const goals = [[30, "Relajado", "unos 10 min al día"], [60, "Constante", "unos 20 min al día"], [90, "Intenso", "unos 30 min al día"]];
+  const chips = h("div", { class: "goal-row", role: "radiogroup", "aria-label": "Meta diaria" },
+    goals.map(([xp, n, d]) => h("button", { class: "goal" + (xp === goal ? " on" : ""), role: "radio", "aria-checked": xp === goal ? "true" : "false", onclick: (e) => { goal = xp; chips.querySelectorAll(".goal").forEach((b) => { b.classList.remove("on"); b.setAttribute("aria-checked", "false"); }); e.currentTarget.classList.add("on"); e.currentTarget.setAttribute("aria-checked", "true"); } },
+      h("b", null, n), h("span", null, d), h("small", null, xp + " XP"))));
+  const name = h("input", { id: "name", type: "text", placeholder: "Tu nombre", value: S.name || "", autocomplete: "given-name", maxlength: "24", "data-autofocus": true });
+  const go = () => { S.name = name.value.trim() || "Estudiante"; S.goal = goal; save(); Home(); };
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  screen(h("main", { class: "welcome" },
+    h("div", { class: "brand" }, h("span", { class: "brand-mark" }, "C"), h("span", null, "Cahier")),
+    h("h1", { class: "display" }, "Dos cuadernos, un mes, avance de verdad."),
+    h("p", { class: "lead" }, "Un cuaderno de ", h("b", { class: "t-es" }, "ortografía en español"), " y otro de ", h("b", { class: "t-fr" }, "francés"), ". Cada uno empieza con una prueba corta, te arma un plan de 30 días a tu nivel y repite justo lo que fallas hasta que se te queda."),
+    h("label", { class: "field", for: "name" }, h("span", null, "¿Cómo te llamas?"), name),
+    h("div", { class: "field" }, h("span", null, "Meta diaria"), chips),
+    h("button", { class: "btn primary big", onclick: go }, "Abrir mis cuadernos")
+  ), "paper");
+}
+
+/* ---------- inicio ---------- */
+function ring(val, max) {
+  const r = 22, c = 2 * Math.PI * r, p = Math.min(1, val / max);
+  return h("span", { class: "ring", html: `<svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="${r}" class="ring-bg"/><circle cx="26" cy="26" r="${r}" class="ring-fg" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p)}"/></svg>` });
+}
+function PanelCard(pk) {
+  const meta = P[pk], pp = S.panels[pk];
+  const day = currentDay(pp);
+  const doneN = Object.keys(pp.done).length;
+  const body = pp.placed
+    ? [h("div", { class: "pc-meta" }, h("span", { class: "chip" }, meta.levels[pp.lvl].n), h("span", { class: "muted" }, "Día " + Math.min(day + 1, 30) + " de 30")),
+       h("div", { class: "bar", "aria-label": doneN + " de 30 días" }, h("i", { style: "width:" + (doneN / 30 * 100) + "%" })),
+       h("p", { class: "pc-next" }, day < 30 ? dayTitle(pk, pp.plan[day]) : "Plan completado. Puedes seguir repasando."),
+       h("button", { class: "btn primary", onclick: () => Panel(pk) }, day < 30 ? "Continuar" : "Ver mi cuaderno")]
+    : [h("p", { class: "pc-next" }, pk === "fr" ? "12 preguntas, unos 3 minutos. Si no sabes nada de francés, marca «No lo sé» y empezamos desde cero." : "12 preguntas, unos 3 minutos. Medimos tildes, letras dudosas y homófonos."),
+       h("button", { class: "btn primary", onclick: () => TestIntro(pk) }, "Hacer prueba de nivel")];
+  return h("section", { class: "panel-card " + pk },
+    h("div", { class: "pc-head" },
+      h("span", { class: "pc-tab" }, pk === "fr" ? "FR" : "ES"),
+      h("div", null, h("h2", null, meta.name), h("p", { class: "muted" }, meta.sub))),
+    body);
+}
+function Home() {
+  if (!S.name) return Welcome();
+  const goal = S.goal || 60;
+  screen(h("main", { class: "home" },
+    h("header", { class: "topbar" },
+      h("div", { class: "brand" }, h("span", { class: "brand-mark" }, "C"), h("span", null, "Cahier")),
+      h("div", { class: "stats" },
+        h("span", { class: "stat flame", title: "Racha" }, icon("flame"), h("b", null, streakNow()), h("span", { class: "sr" }, " días de racha")),
+        h("span", { class: "stat xp", title: "XP total" }, icon("bolt"), h("b", null, S.xp)))),
+    h("section", { class: "hello" },
+      h("div", null, h("h1", { class: "display" }, "Hola, " + S.name + "."),
+        h("p", { class: "muted" }, xpToday() >= goal ? "Meta de hoy cumplida. Lo que hagas ahora es extra." : "Te faltan " + (goal - xpToday()) + " XP para la meta de hoy.")),
+      h("div", { class: "goal-ring" }, ring(xpToday(), goal), h("span", null, h("b", null, xpToday()), "/" + goal))),
+    PanelCard("es"), PanelCard("fr"),
+    h("footer", { class: "foot" },
+      h("button", { class: "link", onclick: () => { S.sound = !S.sound; save(); Home(); } }, S.sound ? "Sonidos: activados" : "Sonidos: desactivados"),
+      h("button", { class: "link", onclick: Settings }, "Ajustes y progreso"),
+      !TTS ? h("p", { class: "muted small" }, "Este navegador no tiene voz sintética: los ejercicios de escuchar y dictado se reemplazan por otros.") : null)
+  ), "paper");
+}
+function Settings() {
+  const row = (label, action, danger) => {
+    const b = h("button", { class: "btn " + (danger ? "danger" : "ghost") }, label);
+    let armed = false;
+    b.addEventListener("click", () => { if (!danger) return action(); if (!armed) { armed = true; b.textContent = "Toca otra vez para confirmar"; setTimeout(() => { armed = false; b.textContent = label; }, 3000); } else action(); });
+    return b;
+  };
+  screen(h("main", { class: "settings" },
+    h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Volver", onclick: Home }, icon("back")), h("h1", null, "Ajustes")),
+    h("section", { class: "card" }, h("h3", null, "Meta diaria"),
+      h("div", { class: "row-wrap" }, [30, 60, 90].map((g) => h("button", { class: "btn " + (S.goal === g ? "primary" : "ghost"), onclick: () => { S.goal = g; save(); Settings(); } }, g + " XP")))),
+    ["es", "fr"].map((pk) => h("section", { class: "card" }, h("h3", null, P[pk].name),
+      h("p", { class: "muted" }, S.panels[pk].placed ? "Nivel " + P[pk].levels[S.panels[pk].lvl].n + " · " + Object.keys(S.panels[pk].done).length + " días hechos" : "Sin prueba de nivel todavía."),
+      S.panels[pk].placed ? row("Reiniciar este cuaderno", () => { S.panels[pk] = blankPanel(); save(); toast("Cuaderno de " + P[pk].name.toLowerCase() + " reiniciado"); Settings(); }, true) : null)),
+    h("section", { class: "card" }, h("h3", null, "Todo"), row("Borrar todo y empezar de cero", () => { try { localStorage.removeItem(KEY); } catch (e) { /* nada */ } S = load(); Welcome(); }, true)),
+    h("p", { class: "muted small" }, "Tu progreso se guarda solo en este navegador.")
+  ), "paper");
+}
+
+/* ---------- prueba de nivel ---------- */
+function TestIntro(pk) {
+  const meta = P[pk];
+  screen(h("main", { class: "center-col " + pk },
+    h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Volver", onclick: Home }, icon("back")), h("h1", null, "Prueba de nivel · " + meta.name)),
+    h("div", { class: "sheet-card" },
+      h("p", { class: "hand big" }, "Sin presión."),
+      h("p", null, "Las preguntas van de fácil a difícil. Cuando un nivel se te complica, paramos ahí: ese es tu punto de partida."),
+      h("ul", { class: "ticks" },
+        h("li", null, "Unas 12 preguntas, 3 minutos."),
+        h("li", null, "Usa «No lo sé» en vez de adivinar: así el plan sale más preciso."),
+        h("li", null, "Al final ves tu nivel y tu plan de 30 días.")),
+      h("button", { class: "btn primary big", "data-autofocus": true, onclick: () => Test(pk, false) }, "Empezar"))
+  ), "paper");
+}
+function Test(pk, isFinal) {
+  const meta = P[pk];
+  const qs = [...meta.place].sort((a, b) => a.g - b.g);
+  let extra = [];
+  if (isFinal) {
+    const pool = studiedUnits(pk).map((id) => unit(pk, id)).flatMap((u) => refs(u, pk === "fr" ? "q" : "w"));
+    extra = shuffle(pool).slice(0, 8).map((r) => {
+      const d = data(pk, r);
+      return pk === "fr" ? { g: 9, q: d[0], ok: d[1], no: d[2] } : { g: 9, q: d[2], ok: fillWord(d[2], d[0]), no: d[1].split("|").map((x) => fillWord(d[2], x)) };
+    });
+  }
+  const all = qs.concat(extra);
+  const ans = [];
+  let i = 0;
+  const wrongIn = (g) => ans.filter((a) => a.g === g && !a.ok).length;
+  const next = () => {
+    if (!isFinal && ans.length) {
+      const last = ans[ans.length - 1];
+      if (wrongIn(last.g) > meta.group - meta.need) return finish();
+    }
+    if (i >= all.length) return finish();
+    render(all[i]);
+  };
+  const finish = () => {
+    let passed = 0;
+    for (let g = 0; g < meta.gname.length; g++) {
+      const c = ans.filter((a) => a.g === g && a.ok).length;
+      if (c >= meta.need) passed++; else break;
+    }
+    const placeScore = Math.round(ans.filter((a) => a.g < 9 && a.ok).length / qs.length * 100);
+    if (isFinal) return FinalResult(pk, placeScore, extra.length ? Math.round(ans.filter((a) => a.g === 9 && a.ok).length / extra.length * 100) : null, passed);
+    TestResult(pk, Math.min(passed, meta.levels.length - 1), placeScore, passed);
+  };
+  const render = (q) => {
+    let chosen = null;
+    const opts = shuffle([q.ok, ...q.no]);
+    const optBtns = opts.map((o, k) => h("button", { class: "opt", "data-k": k + 1, onclick: (e) => choose(o, e.currentTarget) }, h("kbd", null, k + 1), h("span", { lang: pk === "fr" && /___/.test(q.q) ? "fr" : null }, o)));
+    const dont = h("button", { class: "opt dont", onclick: (e) => choose("__nose", e.currentTarget) }, "No lo sé");
+    const checkBtn = h("button", { class: "btn primary big", disabled: true, onclick: () => { if (!chosen) return; ans.push({ g: q.g, ok: chosen === q.ok }); i++; next(); } }, "Siguiente");
+    const choose = (o, el) => { chosen = o; [...optBtns, dont].forEach((b) => b.classList.remove("sel")); el.classList.add("sel"); checkBtn.disabled = false; };
+    const qText = /___/.test(q.q) ? sentenceNode(q.q, pk === "fr" ? "fr" : "es") : h("p", { class: "q-text" }, q.q);
+    const view = h("main", { class: "lesson " + pk },
+      h("header", { class: "lbar" },
+        h("button", { class: "icon-btn", "aria-label": "Salir", onclick: Home }, icon("close")),
+        h("div", { class: "bar grow" }, h("i", { style: "width:" + (i / all.length * 100) + "%" })),
+        h("span", { class: "chip ghost" }, isFinal ? "Final" : meta.gname[q.g] || "Repaso")),
+      h("section", { class: "stage" }, h("p", { class: "ex-title" }, isFinal ? "Examen final" : "Prueba de nivel"), qText,
+        h("div", { class: "opts" }, optBtns, dont)),
+      h("footer", { class: "checkbar" }, checkBtn));
+    screen(view, "lesson-screen");
+    keyHandler((e) => {
+      const n = +e.key; if (n >= 1 && n <= optBtns.length) optBtns[n - 1].click();
+      if (e.key === "Enter" && !checkBtn.disabled) checkBtn.click();
+    });
+  };
+  next();
+}
+function keyHandler(fn) {
+  const f = (e) => { if (e.target && e.target.tagName === "INPUT" && e.key !== "Enter") return; fn(e); };
+  document.addEventListener("keydown", f); cleanup = () => document.removeEventListener("keydown", f);
+}
+function TestResult(pk, lvl, score, passed) {
+  const meta = P[pk], pp = S.panels[pk];
+  pp.placed = true; pp.lvl = lvl; pp.start = meta.levels[lvl].start; pp.initial = score; pp.plan = buildPlan(pk, pp.start);
+  pp.done = {}; pp.srs = {}; pp.session = 0; pp.final = null; save();
+  const week = pp.plan.slice(0, 7);
+  screen(h("main", { class: "center-col " + pk },
+    h("div", { class: "sheet-card result" },
+      h("p", { class: "ex-title" }, "Tu nivel en " + meta.name.toLowerCase()),
+      h("p", { class: "level-big" }, meta.levels[lvl].n),
+      h("p", null, passed === 0
+        ? (pk === "fr" ? "Empezamos desde la base: saludos, presentarte y los dos verbos más usados." : "Empezamos por las letras que más confunden: b/v, h, g/j, ll/y y c/s/z.")
+        : "Ya dominas lo de " + meta.gname.slice(0, passed).join(", ") + ". Tu plan arranca en la unidad " + pp.start + " y refuerza las bases al final."),
+      h("p", { class: "muted small" }, "Acertaste el " + score + "% de la prueba. En el día 30 la repites para comparar."),
+      h("h3", { class: "week-h" }, "Tu primera semana"),
+      h("ol", { class: "week" }, week.map((e, i) => h("li", null, h("span", { class: "d" }, "Día " + (i + 1)), h("span", null, dayTitle(pk, e))))),
+      h("button", { class: "btn primary big", "data-autofocus": true, onclick: () => Panel(pk) }, "Ver mi plan de 30 días"))
+  ), "paper");
+}
+function FinalResult(pk, score, unitScore, passed) {
+  const meta = P[pk], pp = S.panels[pk];
+  pp.final = score; pp.done[FINAL_DAY] = { stars: score >= 85 ? 3 : score >= 60 ? 2 : 1, acc: score };
+  pp.session++; addXp(50); save();
+  const delta = score - (pp.initial || 0);
+  const lvlNow = meta.levels[Math.min(passed, meta.levels.length - 1)].n;
+  screen(h("main", { class: "center-col " + pk },
+    h("div", { class: "sheet-card result" },
+      h("p", { class: "ex-title" }, "Examen final · " + meta.name),
+      h("p", { class: "hand big" }, delta > 0 ? "+" + delta + " puntos en 30 días" : "Terminaste el mes"),
+      h("div", { class: "compare" },
+        h("div", null, h("span", { class: "muted small" }, "Día 1"), h("div", { class: "cbar" }, h("i", { class: "before", style: "width:" + (pp.initial || 0) + "%" })), h("b", null, (pp.initial || 0) + "%")),
+        h("div", null, h("span", { class: "muted small" }, "Día 30"), h("div", { class: "cbar" }, h("i", { style: "width:" + score + "%" })), h("b", null, score + "%"))),
+      unitScore != null ? h("p", null, "En las preguntas de tus unidades acertaste el " + unitScore + "%.") : null,
+      h("p", null, "Nivel actual estimado: ", h("b", null, lvlNow), "."),
+      h("p", { class: "muted small" }, "Puedes seguir con repasos mixtos o reiniciar el cuaderno desde Ajustes para un nuevo plan con la prueba actualizada."),
+      h("button", { class: "btn primary big", "data-autofocus": true, onclick: () => Panel(pk) }, "Volver al cuaderno"))
+  ), "paper");
+}
+
+/* ---------- panel con el camino de 30 días ---------- */
+function Panel(pk) {
+  const meta = P[pk], pp = S.panels[pk];
+  if (!pp.placed) return TestIntro(pk);
+  const cur = currentDay(pp);
+  const weak = weakCount(pk);
+  const path = h("ol", { class: "path" });
+  for (let i = 0; i < 30; i++) {
+    if (i % 7 === 0) path.append(h("li", { class: "week-label" }, i === 28 ? "Cierre" : "Semana " + (i / 7 + 1)));
+    const e = pp.plan[i], done = pp.done[i], open = i <= cur;
+    const x = Math.round((Math.sin(i * 0.85) + 1) / 2 * 38);
+    const special = e.k === "review" || e.k === "final" || e.k === "mix";
+    const stars = done ? h("span", { class: "stars" }, [0, 1, 2].map((s) => h("span", { class: s < done.stars ? "on" : "", html: ICON.star }))) : null;
+    path.append(h("li", { class: "node-row", style: "--x:" + x + "%" },
+      h("button", { class: "node " + (done ? "done" : i === cur ? "current" : open ? "" : "locked") + (special ? " special " + e.k : ""), "aria-label": "Día " + (i + 1) + ": " + dayTitle(pk, e) + (done ? ", completado" : open ? "" : ", bloqueado"), onclick: () => (open ? DaySheet(pk, i) : toast("Completa el día " + (cur + 1) + " primero")) },
+        done ? icon("check") : open ? h("b", null, i + 1) : icon("lock")),
+      h("span", { class: "node-label" }, h("small", null, "Día " + (i + 1)), h("span", null, e.u ? unit(pk, e.u).t : KIND[e.k].label), stars)));
+  }
+  screen(h("main", { class: "panel-view " + pk },
+    h("header", { class: "subbar sticky" },
+      h("button", { class: "icon-btn", "aria-label": "Volver al inicio", onclick: Home }, icon("back")),
+      h("div", { class: "grow" }, h("h1", null, meta.name), h("p", { class: "muted small" }, meta.levels[pp.lvl].n + " · " + Object.keys(pp.done).length + "/30 días")),
+      h("span", { class: "stat flame" }, icon("flame"), h("b", null, streakNow()))),
+    h("div", { class: "quick" },
+      cur < 30 ? h("button", { class: "btn primary", onclick: () => DaySheet(pk, cur) }, "Día " + (cur + 1) + ": " + KIND[pp.plan[cur].k].label) : null,
+      h("button", { class: "btn ghost", onclick: () => Sprint(pk) }, icon("timer"), "Contrarreloj"),
+      weak ? h("button", { class: "btn ghost", onclick: () => startLesson(pk, null, { k: "mix", weak: true }) }, "Repasar errores (" + weak + ")") : null,
+      h("button", { class: "btn ghost", onclick: () => Notes(pk) }, icon("book"), "Reglas")),
+    path
+  ), "paper");
+  const curNode = app().querySelector(".node.current");
+  if (curNode) setTimeout(() => curNode.scrollIntoView({ block: "center" }), 40);
+}
+function DaySheet(pk, i) {
+  const pp = S.panels[pk], e = pp.plan[i], u = e.u ? unit(pk, e.u) : null;
+  const close = () => ov.remove();
+  const ov = h("div", { class: "overlay", onclick: (ev) => { if (ev.target === ov) close(); } },
+    h("div", { class: "modal " + pk, role: "dialog", "aria-modal": "true", "aria-label": "Día " + (i + 1) },
+      h("p", { class: "ex-title" }, "Día " + (i + 1) + " · " + KIND[e.k].label),
+      h("h2", null, u ? u.t : KIND[e.k].label),
+      h("p", null, KIND[e.k].desc),
+      u ? h("p", { class: "rule" }, u.r) : null,
+      pp.done[i] ? h("p", { class: "muted small" }, "Ya lo hiciste con " + pp.done[i].acc + "% de aciertos. Repetirlo también suma XP.") : null,
+      h("div", { class: "row-wrap" },
+        h("button", { class: "btn ghost", onclick: close }, "Cerrar"),
+        h("button", { class: "btn primary", "data-autofocus": true, onclick: () => { close(); e.k === "final" ? Test(pk, true) : startLesson(pk, i, e); } }, pp.done[i] ? "Repetir" : "Empezar"))));
+  document.body.append(ov);
+  setTimeout(() => { const b = ov.querySelector("[data-autofocus]"); if (b) b.focus(); }, 30);
+  const esc = (ev) => { if (ev.key === "Escape") { close(); document.removeEventListener("keydown", esc); } };
+  document.addEventListener("keydown", esc);
+}
+function Notes(pk) {
+  const pp = S.panels[pk];
+  const ids = uniq(pp.plan.filter((e) => e.u).map((e) => e.u)).sort((a, b) => a - b);
+  screen(h("main", { class: "notes " + pk },
+    h("header", { class: "subbar sticky" }, h("button", { class: "icon-btn", "aria-label": "Volver", onclick: () => Panel(pk) }, icon("back")), h("h1", null, "Reglas de " + P[pk].name.toLowerCase())),
+    ids.map((id) => { const u = unit(pk, id); return h("article", { class: "note-card" }, h("p", { class: "ex-title" }, "Unidad " + u.id + " · " + P[pk].gname[u.g]), h("h3", null, u.t), h("p", { html: u.tip })); })
+  ), "paper");
+}
+
+/* ---------- intro de unidad ---------- */
+function UnitIntro(pk, u, onGo) {
+  const list = pk === "fr"
+    ? h("ul", { class: "vocab" }, u.v.map(([fr, es]) => h("li", null,
+        TTS ? h("button", { class: "icon-btn sm", "aria-label": "Escuchar " + fr, onclick: () => speak(fr, "fr-FR") }, icon("speaker")) : null,
+        h("b", { lang: "fr" }, fr), h("span", { class: "muted" }, es))))
+    : h("ul", { class: "vocab ortho" }, u.w.slice(0, 8).map(([ok, bad, ctx]) => h("li", null, h("b", null, fillWord(ctx, ok)), h("s", { class: "red-pen" }, fillWord(ctx, bad.split("|")[0])))));
+  screen(h("main", { class: "center-col " + pk },
+    h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Salir", onclick: () => Panel(pk) }, icon("close")), h("h1", null, "Unidad " + u.id)),
+    h("article", { class: "sheet-card intro" },
+      h("p", { class: "ex-title" }, P[pk].gname[u.g] + " · " + (pk === "fr" ? "Gramática" : "Regla")),
+      h("h2", { class: "display" }, u.t),
+      h("p", { class: "tip", html: u.tip }),
+      h("h3", null, pk === "fr" ? "Palabras de hoy" : "Bien escrito / mal escrito"),
+      list,
+      h("button", { class: "btn primary big", "data-autofocus": true, onclick: onGo }, "Empezar ejercicios"))
+  ), "paper");
+}
+
+/* ---------- motor de lección ---------- */
+let L = null;
+function startLesson(pk, dayIdx, entry) {
+  let queue;
+  if (entry.weak) {
+    const pp = S.panels[pk];
+    const weakRefs = Object.entries(pp.srs).filter(([, v]) => v.b === 0).map(([k]) => { const [u, kk, i] = k.split("."); return { u: +u, k: kk, i: +i }; });
+    queue = shuffle(weakRefs).slice(0, 12).map((r) => make(pk, r)).filter(Boolean);
+  } else queue = buildLesson(pk, entry);
+  if (!queue.length) { toast("No hay ejercicios para este día"); return; }
+  queue.forEach((ex, n) => { ex.id = n; ex.tries = 0; });
+  L = { pk, dayIdx, entry, queue, pos: 0, base: queue.length, first: 0, xp: 0, combo: 0, maxCombo: 0, t0: Date.now(), seen: new Set() };
+  const u = entry.u ? unit(pk, entry.u) : null;
+  if (u && (entry.k === "learn" || entry.k === "boost")) UnitIntro(pk, u, runEx); else runEx();
+}
+function runEx() {
+  if (L.pos >= L.queue.length) return finishLesson();
+  const ex = L.queue[L.pos];
+  const pk = L.pk;
+  const state = { answer: null, done: false };
+  const checkBtn = h("button", { class: "btn primary big", disabled: true }, "Comprobar");
+  const setAnswer = (a) => { state.answer = a; checkBtn.disabled = a == null || a === "" || (Array.isArray(a) && !a.length); };
+  const fb = h("div", { class: "feedback", hidden: true, "aria-live": "polite" });
+  const resolve = (ok, extra) => {
+    if (state.done) return; state.done = true;
+    beep(ok);
+    stage.classList.add(ok ? "is-ok" : "is-bad");
+    if (ex.type === "pairs") (ex.missed || []).forEach((r) => srsMark(pk, r, false));
+    if (ex.refs && ex.type === "pairs") ex.refs.forEach((r) => { if (!(ex.missed || []).includes(r)) srsMark(pk, r, true); });
+    else srsMark(pk, ex.ref, ok);
+    if (ok) { L.combo++; L.maxCombo = Math.max(L.maxCombo, L.combo); if (ex.tries === 0) L.first++; L.xp += ex.tries === 0 ? 10 + (L.combo >= 5 ? 5 : 0) : 5; }
+    else {
+      L.combo = 0;
+      if (ex.tries < 2) {
+        let again = ex.type === "pairs" ? MK.pairs(pk, ex.refs) : MK[ex.mk](pk, ex.ref);
+        if (again) { again.mk = ex.mk; again.id = ex.id; again.tries = ex.tries + 1; L.queue.push(again); }
+      }
+    }
+    showFeedback(ok, extra);
+  };
+  const showFeedback = (ok, extra) => {
+    const warn = extra && extra.warn;
+    const okMsg = pk === "fr" ? pickOne(["Très bien !", "¡Exacto!", "Parfait !", "¡Eso es!"]) : pickOne(["¡Perfecto!", "¡Bien escrito!", "¡Exacto!", "¡Eso es!"]);
+    const answerLine = ex.type === "pairs" ? null : (ex.full || ex.speakOk || ex.ok);
+    fb.replaceChildren(
+      h("div", { class: "fb-inner" },
+        h("p", { class: "hand fb-title" }, ok ? (warn ? "Casi perfecto" : okMsg) : "Ojo aquí"),
+        warn ? h("p", null, warn) : null,
+        !ok && ex.tries < 2 ? h("p", { class: "small" }, "Este ejercicio vuelve al final de la lección.") : null,
+        !ok && answerLine ? h("p", null, "Correcto: ", h("b", { lang: pk === "fr" ? "fr" : "es" }, answerLine)) : (ok && ex.full ? h("p", null, h("b", null, ex.full)) : null),
+        ex.note ? h("p", { class: "fb-note" + (ok ? " muted" : "") }, ex.note) : null,
+        h("div", { class: "fb-actions" },
+          TTS && ex.speakOk ? h("button", { class: "icon-btn", "aria-label": "Escuchar", onclick: () => speak(ex.speakOk, "fr-FR") }, icon("speaker")) : null,
+          h("button", { class: "btn " + (ok ? "ok" : "bad") + " big", "data-cont": true, onclick: () => { L.pos++; runEx(); } }, "Continuar"))));
+    fb.className = "feedback " + (ok ? "ok" : "bad"); fb.hidden = false;
+    checkBtn.hidden = true;
+    setTimeout(() => { const c = fb.querySelector("[data-cont]"); if (c) c.focus(); }, 20);
+    if (pk === "fr" && ok && ex.speakOk && TTS && ex.type !== "pairs") speak(ex.speakOk, "fr-FR");
+  };
+  checkBtn.addEventListener("click", () => { if (state.answer == null) return; const g = grade(ex, state.answer); resolve(g.ok, g); });
+
+  const body = renderBody(ex, pk, setAnswer, resolve);
+  const stage = h("section", { class: "stage" },
+    h("p", { class: "ex-title" }, ex.tries ? "Otra vez: " + ex.title.charAt(0).toLowerCase() + ex.title.slice(1) : ex.title), body);
+  const view = h("main", { class: "lesson " + pk },
+    h("header", { class: "lbar" },
+      h("button", { class: "icon-btn", "aria-label": "Salir de la lección", onclick: () => Panel(pk) }, icon("close")),
+      h("div", { class: "bar grow", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": L.queue.length, "aria-valuenow": L.pos }, h("i", { style: "width:" + (L.pos / L.queue.length * 100) + "%" })),
+      h("span", { class: "combo" + (L.combo >= 3 ? " hot" : "") }, icon("flame"), L.combo)),
+    stage,
+    h("footer", { class: "checkbar" }, checkBtn, fb));
+  screen(view, "lesson-screen");
+  if (ex.audio) setTimeout(() => speak(ex.audio, pk === "fr" ? "fr-FR" : "es-ES"), 250);
+  keyHandler((e) => {
+    if (!fb.hidden) { if (e.key === "Enter") { e.preventDefault(); const c = fb.querySelector("[data-cont]"); if (c) c.click(); } return; }
+    if (e.key === "Enter" && !checkBtn.disabled && !checkBtn.hidden) { e.preventDefault(); checkBtn.click(); return; }
+    const n = +e.key; if (n >= 1 && n <= 9) { const b = stage.querySelector('[data-k="' + n + '"]'); if (b) b.click(); }
+  });
+}
+function grade(ex, a) {
+  if (ex.type === "mc") return { ok: a === ex.ok };
+  if (ex.type === "order") return { ok: a.join(" ") === ex.ok };
+  if (ex.type === "write") {
+    if (ex.lang === "fr") {
+      const want = normFr(ex.ok), got = normFr(a);
+      if (got === want) return { ok: true };
+      if (noAcc(got) === noAcc(want)) return { ok: true, warn: "Revisa los acentos: se escribe «" + ex.ok + "»." };
+      return { ok: false };
+    }
+    return { ok: normEs(a) === normEs(ex.ok) };
+  }
+  return { ok: false };
+}
+function sentenceNode(s, lang, fillText) {
+  const [pre, post] = s.split("___");
+  return h("p", { class: "sentence", lang }, pre, h("span", { class: "blank" + (fillText ? " filled" : "") }, fillText || " "), post);
+}
+function audioBtns(text, lang) {
+  return h("div", { class: "audio-row" },
+    h("button", { class: "audio-btn", "aria-label": "Escuchar", onclick: () => speak(text, lang) }, icon("speaker")),
+    h("button", { class: "audio-btn sm", "aria-label": "Escuchar despacio", onclick: () => speak(text, lang, true) }, icon("turtle")));
+}
+function accentKeys(input, lang) {
+  const keys = lang === "fr" ? ["é", "è", "ê", "à", "â", "ç", "î", "ô", "ù", "û", "ë", "œ", "'"] : ["á", "é", "í", "ó", "ú", "ñ", "ü"];
+  return h("div", { class: "keys", "aria-label": "Letras especiales" }, keys.map((k) => h("button", { class: "key", type: "button", onmousedown: (e) => e.preventDefault(), onclick: () => {
+    const s = input.selectionStart ?? input.value.length, e2 = input.selectionEnd ?? s;
+    input.value = input.value.slice(0, s) + k + input.value.slice(e2); input.focus(); input.setSelectionRange(s + 1, s + 1); input.dispatchEvent(new Event("input"));
+  } }, k)));
+}
+function renderBody(ex, pk, setAnswer, resolve) {
+  const lang = pk === "fr" ? "fr-FR" : "es-ES";
+  const wrap = h("div", { class: "ex-body" });
+  if (ex.type === "mc") {
+    if (ex.audio) wrap.append(audioBtns(ex.audio, lang));
+    if (ex.prompt) wrap.append(h("p", { class: "prompt", lang: ex.promptSpeak ? "fr" : null }, ex.promptSpeak && TTS ? h("button", { class: "icon-btn sm", "aria-label": "Escuchar", onclick: () => speak(ex.promptSpeak, lang) }, icon("speaker")) : null, ex.prompt));
+    let blank = null;
+    if (ex.sentence) { const sn = sentenceNode(ex.sentence, pk === "fr" ? "fr" : "es"); blank = sn.querySelector(".blank"); wrap.append(sn); }
+    const btns = ex.opts.map((o, k) => h("button", { class: "opt", "data-k": k + 1, lang: pk === "fr" && ex.mk !== "fres" ? "fr" : null, onclick: (e) => {
+      btns.forEach((b) => b.classList.remove("sel")); e.currentTarget.classList.add("sel"); setAnswer(o);
+      if (blank) { blank.textContent = o; blank.classList.add("filled"); }
+      if (pk === "fr" && ex.mk !== "fres" && ex.mk !== "cloze" && TTS) speak(o, lang);
+    } }, h("kbd", null, k + 1), h("span", null, o)));
+    wrap.append(h("div", { class: "opts" + (ex.opts.some((o) => o.length > 18) ? " stack" : "") }, btns));
+  } else if (ex.type === "write") {
+    if (ex.audio) wrap.append(audioBtns(ex.audio, lang));
+    if (ex.prompt) wrap.append(h("p", { class: "prompt" }, ex.prompt));
+    if (ex.sentence) wrap.append(sentenceNode(ex.sentence, "es"));
+    const inp = h("input", { id: "answer", class: "answer", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: "false", lang: ex.lang, placeholder: ex.lang === "fr" ? "Escribe en francés" : "Escribe la palabra", "data-autofocus": true });
+    inp.addEventListener("input", () => setAnswer(inp.value.trim() ? inp.value : null));
+    wrap.append(inp, accentKeys(inp, ex.lang));
+  } else if (ex.type === "order") {
+    if (ex.audio) wrap.append(audioBtns(ex.audio, lang));
+    if (ex.prompt) wrap.append(h("p", { class: "prompt" }, ex.prompt));
+    const line = h("div", { class: "tile-line", lang: "fr", "aria-label": "Tu frase" });
+    const bank = h("div", { class: "tile-bank", lang: "fr" });
+    const chosen = [];
+    const sync = () => setAnswer(chosen.map((c) => c.t));
+    ex.bank.forEach((t, k) => {
+      const tile = h("button", { class: "tile", "data-k": k + 1 <= 9 ? k + 1 : null }, t);
+      tile.addEventListener("click", () => {
+        if (tile.parentNode === bank) { line.append(tile); chosen.push({ t, tile }); if (TTS) speak(t, lang); }
+        else { bank.append(tile); const idx = chosen.findIndex((c) => c.tile === tile); chosen.splice(idx, 1); }
+        sync();
+      });
+      bank.append(tile);
+    });
+    wrap.append(line, bank);
+  } else if (ex.type === "pairs") {
+    const left = shuffle(ex.items.map((x, k) => ({ t: x[0], k }))), right = shuffle(ex.items.map((x, k) => ({ t: x[1], k })));
+    let selL = null, selR = null, matched = 0, errors = 0; ex.missed = [];
+    const colL = h("div", { class: "pcol", lang: "fr" }), colR = h("div", { class: "pcol" });
+    const tryMatch = () => {
+      if (!selL || !selR) return;
+      const a = selL, b = selR; selL = selR = null;
+      if (a.k === b.k) {
+        a.el.classList.add("matched"); b.el.classList.add("matched"); a.el.disabled = b.el.disabled = true; a.el.classList.remove("sel"); b.el.classList.remove("sel");
+        matched++; if (matched === ex.items.length) setTimeout(() => resolve(errors <= 1, null), 250);
+      } else {
+        errors++; if (!ex.missed.includes(ex.refs[a.k])) ex.missed.push(ex.refs[a.k]);
+        [a.el, b.el].forEach((el) => { el.classList.add("wrong"); setTimeout(() => el.classList.remove("wrong", "sel"), 450); });
+        beep(false);
+      }
+    };
+    left.forEach((it) => { const el = h("button", { class: "pbtn" }, it.t); it.el = el; el.addEventListener("click", () => { colL.querySelectorAll(".pbtn").forEach((b) => b.classList.remove("sel")); el.classList.add("sel"); selL = it; if (TTS) speak(it.t, lang); tryMatch(); }); colL.append(el); });
+    right.forEach((it) => { const el = h("button", { class: "pbtn" }, it.t); it.el = el; el.addEventListener("click", () => { colR.querySelectorAll(".pbtn").forEach((b) => b.classList.remove("sel")); el.classList.add("sel"); selR = it; tryMatch(); }); colR.append(el); });
+    wrap.append(h("div", { class: "pairs" }, colL, colR), h("p", { class: "muted small center" }, "Máximo un error para que cuente como perfecto."));
+  } else if (ex.type === "letter") {
+    wrap.append(sentenceNode(ex.sentence, "es"));
+    const word = h("p", { class: "word-gap" }, ex.pre, h("span", { class: "gap" }, "?"), ex.post);
+    const btns = ex.opts.map((o, k) => h("button", { class: "letter-btn", "data-k": k + 1, onclick: () => {
+      word.querySelector(".gap").textContent = o || "∅"; btns.forEach((b) => (b.disabled = true)); resolve(o === ex.ok, null);
+    } }, o === "" ? "nada" : o));
+    wrap.append(word, h("div", { class: "letter-row" }, btns));
+  } else if (ex.type === "hunt") {
+    const [pre, post] = ex.ctx.split("___");
+    const pw = pre.split(" "), lead = pw.pop(), qw = post.split(" "), tail = qw.shift();
+    const chips = [];
+    let k = 0;
+    const mk = (t, isT) => { k++; const b = h("button", { class: "word-chip", "data-k": k <= 9 ? k : null }, t); b.addEventListener("click", () => {
+      chips.forEach((c) => (c.disabled = true));
+      const target = chips.find((c) => c.dataset.t === "1");
+      target.classList.add("target");
+      if (isT) { target.textContent = lead + ex.okW + tail; target.classList.add("fixed"); resolve(true, null); }
+      else { b.classList.add("miss"); resolve(false, null); }
+    }); if (isT) b.dataset.t = "1"; chips.push(b); return b; };
+    const line = h("p", { class: "hunt-line" });
+    pw.filter(Boolean).forEach((t) => line.append(mk(t, false), " "));
+    line.append(mk(lead + ex.badW + tail, true), " ");
+    qw.filter(Boolean).forEach((t) => line.append(mk(t, false), " "));
+    wrap.append(line);
+  } else if (ex.type === "tilde") {
+    wrap.append(sentenceNode(ex.sentence, "es"));
+    const row = h("div", { class: "tilde-row" });
+    const btns = [];
+    ex.base.forEach((c, i) => {
+      if (/[aeiouAEIOU]/.test(c)) { const b = h("button", { class: "tl vowel", "aria-label": "Tilde en la " + c }, c); b.addEventListener("click", () => pick(i, b)); btns.push(b); row.append(b); }
+      else row.append(h("span", { class: "tl" }, c));
+    });
+    const none = h("button", { class: "btn ghost", "data-k": 1 }, "No lleva tilde");
+    none.addEventListener("click", () => pick(-1, none));
+    const pick = (i, b) => {
+      btns.concat(none).forEach((x) => (x.disabled = true));
+      if (ex.target >= 0) { const t = row.children[ex.target]; t.textContent = [...ex.word][ex.target]; t.classList.add("fixed"); }
+      if (i !== ex.target) b.classList.add("miss");
+      resolve(i === ex.target, null);
+    };
+    wrap.append(row, h("div", { class: "center" }, none));
+  }
+  return wrap;
+}
+function finishLesson() {
+  const pk = L.pk, pp = S.panels[pk];
+  const acc = Math.round(L.first / L.base * 100);
+  const stars = acc >= 90 ? 3 : acc >= 70 ? 2 : 1;
+  const bonus = 20 + (L.dayIdx != null && !pp.done[L.dayIdx] ? 10 : 0);
+  const mins = Math.max(1, Math.round((Date.now() - L.t0) / 60000));
+  let dayLabel = null;
+  if (L.dayIdx != null) {
+    const prev = pp.done[L.dayIdx];
+    pp.done[L.dayIdx] = { stars: Math.max(stars, prev ? prev.stars : 0), acc: Math.max(acc, prev ? prev.acc : 0) };
+    dayLabel = "Día " + (L.dayIdx + 1) + " completado";
+  }
+  pp.session++;
+  addXp(L.xp + bonus);
+  const goalHit = xpToday() >= (S.goal || 60);
+  screen(h("main", { class: "center-col " + pk },
+    h("div", { class: "sheet-card result" },
+      h("p", { class: "hand big" }, dayLabel || "Repaso terminado"),
+      h("div", { class: "stars big" }, [0, 1, 2].map((s) => h("span", { class: s < stars ? "on" : "", html: ICON.star }))),
+      h("div", { class: "result-grid" },
+        h("div", null, h("b", null, "+" + (L.xp + bonus)), h("span", null, "XP")),
+        h("div", null, h("b", null, acc + "%"), h("span", null, "a la primera")),
+        h("div", null, h("b", null, L.maxCombo), h("span", null, "mejor racha")),
+        h("div", null, h("b", null, mins), h("span", null, mins === 1 ? "minuto" : "minutos"))),
+      h("p", { class: "muted" }, acc < 70 ? "Lo que fallaste vuelve mañana en el repaso, hasta que salga solo." : goalHit ? "Meta diaria cumplida. Racha de " + streakNow() + (streakNow() === 1 ? " día." : " días.") : "Vas bien. Te faltan " + Math.max(0, (S.goal || 60) - xpToday()) + " XP para la meta de hoy."),
+      h("button", { class: "btn primary big", "data-autofocus": true, onclick: () => Panel(pk) }, "Volver al plan"))
+  ), "paper");
+  L = null;
+}
+
+/* ---------- contrarreloj ---------- */
+function Sprint(pk) {
+  const pp = S.panels[pk];
+  const ids = studiedUnits(pk);
+  const items = ids.map((id) => unit(pk, id)).flatMap((u) => pk === "fr" ? u.v.map((x) => ({ q: x[1], ok: x[0], pool: u.v.map((y) => y[0]) })) : u.w.map((x) => ({ q: x[2], ok: fillWord(x[2], x[0]), bad: fillWord(x[2], x[1].split("|")[0]) })));
+  let score = 0, left = 60, n = 0, timer = null;
+  const ready = () => screen(h("main", { class: "center-col " + pk },
+    h("header", { class: "subbar" }, h("button", { class: "icon-btn", "aria-label": "Volver", onclick: () => Panel(pk) }, icon("back")), h("h1", null, "Contrarreloj")),
+    h("div", { class: "sheet-card" },
+      h("p", { class: "hand big" }, "60 segundos."),
+      h("p", null, pk === "fr" ? "Te mostramos una palabra en español: toca su traducción. Solo palabras de unidades que ya viste." : "Toca la forma bien escrita para completar cada frase. Solo reglas que ya viste."),
+      h("p", { class: "muted" }, "Tu mejor marca: " + (pp.best || 0)),
+      h("button", { class: "btn primary big", "data-autofocus": true, onclick: run }, "Empezar"))), "paper");
+  const run = () => {
+    const view = h("main", { class: "lesson sprint " + pk });
+    screen(view, "lesson-screen");
+    const tbar = h("i", { style: "width:100%" });
+    const sc = h("b", null, "0");
+    const stage = h("section", { class: "stage" });
+    view.append(h("header", { class: "lbar" }, h("button", { class: "icon-btn", "aria-label": "Salir", onclick: () => Panel(pk) }, icon("close")), h("div", { class: "bar grow timebar" }, tbar), h("span", { class: "combo hot" }, icon("bolt"), sc)), stage);
+    const nextQ = () => {
+      const it = pickOne(items); n++;
+      const wrong = pk === "fr" ? pickOne(uniq(it.pool.filter((x) => x !== it.ok)).concat(frAllFallback(it.ok))) : it.bad;
+      const opts = shuffle([it.ok, wrong]);
+      stage.replaceChildren(
+        pk === "fr" ? h("p", { class: "prompt big-prompt" }, it.q) : sentenceNode(it.q, "es"),
+        h("div", { class: "opts two" }, opts.map((o, k) => h("button", { class: "opt", "data-k": k + 1, lang: pk === "fr" ? "fr" : null, onclick: (e) => {
+          const ok = o === it.ok; beep(ok); e.currentTarget.classList.add(ok ? "right" : "miss");
+          if (ok) { score++; sc.textContent = score; } else left = Math.max(0, left - 3);
+          setTimeout(nextQ, ok ? 120 : 450);
+        } }, h("kbd", null, k + 1), h("span", null, o)))));
+    };
+    keyHandler((e) => { const k = +e.key; if (k === 1 || k === 2) { const b = stage.querySelector('[data-k="' + k + '"]'); if (b) b.click(); } });
+    const prevCleanup = cleanup;
+    timer = setInterval(() => { left -= 0.1; tbar.style.width = Math.max(0, left / 60 * 100) + "%"; if (left <= 0) end(); }, 100);
+    cleanup = () => { clearInterval(timer); if (prevCleanup) prevCleanup(); };
+    nextQ();
+  };
+  const end = () => {
+    clearInterval(timer);
+    const record = score > (pp.best || 0);
+    if (record) pp.best = score;
+    addXp(score * 2);
+    screen(h("main", { class: "center-col " + pk },
+      h("div", { class: "sheet-card result" },
+        h("p", { class: "hand big" }, record ? "¡Nuevo récord!" : "Tiempo"),
+        h("div", { class: "result-grid" }, h("div", null, h("b", null, score), h("span", null, "aciertos")), h("div", null, h("b", null, "+" + score * 2), h("span", null, "XP")), h("div", null, h("b", null, pp.best), h("span", null, "mejor marca"))),
+        h("div", { class: "row-wrap" }, h("button", { class: "btn ghost", onclick: () => Panel(pk) }, "Volver"), h("button", { class: "btn primary", "data-autofocus": true, onclick: () => { score = 0; left = 60; n = 0; run(); } }, "Otra vez")))), "paper");
+  };
+  ready();
+}
+function frAllFallback(ok) { return [pickOne(FR.flatMap((u) => u.v.map((x) => x[0])).filter((x) => x !== ok))]; }
+
+/* ---------- arranque ---------- */
+Home();
+})();
+
+</script>
+<!--END-->
+</body>
+</html>
