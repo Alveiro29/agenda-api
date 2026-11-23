@@ -36,3 +36,14 @@ El progreso se guarda en el `localStorage` del navegador.
 
 La voz (escuchar y dictado) usa la síntesis de voz del navegador; si no existe,
 esos ejercicios se cambian por otros automáticamente.
+
+## App de Mac
+
+`node scripts/build-cahier.js` también genera `dist/instalar-cahier.sh`, un
+instalador de un solo archivo. En la Mac:
+
+    bash ~/Downloads/instalar-cahier.sh
+
+Crea `/Applications/Cahier.app` con ícono propio y la agrega al Dock. Si la Mac
+tiene las Command Line Tools de Apple, compila `mac/Cahier.swift`, una ventana
+nativa (WKWebView) sin barra de navegador. Si no, la app abre Cahier en el navegador.
